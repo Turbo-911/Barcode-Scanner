@@ -1,0 +1,2 @@
+This is an empty file. 
+Test images and programs to be added to the 'tests' folder soon.
