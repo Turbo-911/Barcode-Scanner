@@ -16,19 +16,19 @@ The project uses the **Interleaved 2 of 5 (ITF)** barcode format, which encodes 
 
 Every digit is made of five elements, each either narrow (N) or wide (W), with exactly two wide:
 
-| Digit | Pattern | Digit | Pattern |
-|-------|---------|-------|---------|
-| 0 | N N W W N | 5 | W N W N N |
-| 1 | W N N N W | 6 | N W W N N |
-| 2 | N W N N W | 7 | N N N W W |
-| 3 | W W N N N | 8 | W N N W N |
-| 4 | N N W N W | 9 | N W N W N |
+| Digit | Pattern   | Digit | Pattern   |
+|-------|-----------|-------|-----------|
+| 0     | N N W W N | 5     | W N W N N |
+| 1     | W N N N W | 6     | N W W N N |
+| 2     | N W N N W | 7     | N N N W W |
+| 3     | W W N N N | 8     | W N N W N |
+| 4     | N N W N W | 9     | N W N W N |
 
 For each pair, the first digit is drawn in the bars and the second digit in the spaces, alternating bar, space, bar, space.
 
 The full barcode layout is:
 
-```
+```text
 [quiet zone] [START] [pair 1] [pair 2] [pair 3] [STOP] [quiet zone]
 ```
 
@@ -39,7 +39,7 @@ The full barcode layout is:
 
 ### Number to barcode
 
-1. Check the input is exactly six digits.
+1. Check the input is exactly six digits and starts with a non-zero digit.
 2. Split it into three pairs.
 3. Look up each digit's pattern and interleave the two patterns of each pair.
 4. Add the start and stop patterns to get a list of bar and space widths.
@@ -59,18 +59,18 @@ The full barcode layout is:
 
 ## Project Structure
 
-```
+```text
 barcode-scanner-cpp/
 ├── src/
-│   ├── main.cpp        Program entry point
-│   ├── App.h / App.cpp Console menu and integration of all modules
-│   ├── Common.h        Shared types and function declarations
+│   ├── main.cpp          Program entry point
+│   ├── App.h / App.cpp   Console menu and integration of all modules
+│   ├── Common.h          Shared types and function declarations
 │   ├── Encoder.h / .cpp  Number to bar widths, and barcode rendering
 │   ├── Image.h / .cpp    Image class and grayscale handling
 │   ├── BMP.h / .cpp      BMP file reader and writer
 │   ├── Decoder.h / .cpp  Image to number
 │   └── Camera.h / .cpp   Camera frame capture
-├── tests/              Test images and test programs
+├── tests/                Test images and test programs
 ├── README.md
 └── .gitignore
 ```
@@ -85,7 +85,7 @@ barcode-scanner-cpp/
 
 **With g++:**
 
-```
+```bash
 g++ -std=c++17 src/*.cpp -o barcode
 barcode.exe
 ```
@@ -96,7 +96,7 @@ barcode.exe
 
 The program shows a menu:
 
-```
+```text
  1. Generate barcode from 6-digit number
  2. Read barcode from image file (.bmp)
  3. Scan barcode with camera
@@ -109,24 +109,23 @@ The program shows a menu:
 - **Option 3:** hold a barcode in front of the camera. The program tries up to 30 frames. If none decode, the last frame is saved as `last_capture.bmp` for debugging.
 - **Option 4:** runs a set of sample numbers through encode and decode and prints PASS or FAIL for each.
 
-## Team
+## Roles For Phase 1
 
 | Member | Role | Responsibilities |
 |--------|------|------------------|
-| _Zainab.M_ | Integration | Repository, shared interfaces, `main.cpp`, `App.cpp`, README, merging |
-| _Name 2_ | Encoder | Input validation, digit patterns, bar widths, barcode rendering |
-| _Name 3_ | Image I/O | Image class, BMP reader and writer, grayscale conversion, test images |
-| _Name 4_ | Decoder | Thresholding, scan lines, run lengths, pattern lookup, upside-down handling |
-| _Name 5_ | Camera and Testing | Camera capture, test cases, bug reports |
-
+| _Zainab_ | Integration | Repository, shared interfaces, `main.cpp`, `App.cpp`, README, merging |
+| _Aliza_ | Encoder | Input validation, digit patterns, bar widths, barcode rendering |
+| _Nabeera_ | Image I/O | Image class, BMP reader and writer, grayscale conversion, test images |
+| _Arooj_ | Decoder | Thresholding, scan lines, run lengths, pattern lookup, upside-down handling |
+| _Talha_ | Camera and Testing | Camera capture, test cases, bug reports |
 
 ## Known Limitations
 
-- Only six-digit numbers are supported.
+- Only six-digit numbers starting with a non-zero digit are supported.
 - Image files must be BMP.
 - Heavily blurred, rotated, or low-contrast images may not decode.
 - Camera support depends on the Windows camera APIs available on the machine.
 
 ## License
 
-Developed as a university course project. 
+Developed as a university course project.
