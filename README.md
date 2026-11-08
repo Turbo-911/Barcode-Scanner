@@ -75,23 +75,6 @@ barcode-scanner-cpp/
 └── .gitignore
 ```
 
-## Requirements
-
-- Windows
-- A C++17 compiler (g++ via MinGW-w64, or Visual Studio)
-- A webcam, only for the camera feature
-
-## Build and Run
-
-**With g++:**
-
-```bash
-g++ -std=c++17 src/*.cpp -o barcode
-barcode.exe
-```
-
-**With Visual Studio:** create a Console App project, add all files from `src/`, set the language standard to C++17, then build and run.
-
 ## Usage
 
 The program shows a menu:
