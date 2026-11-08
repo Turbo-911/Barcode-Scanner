@@ -113,7 +113,7 @@ The program shows a menu:
 
 | Member | Role | Responsibilities |
 |--------|------|------------------|
-| _Zainab.M_ | Team Leader, Integration | Repository, shared interfaces, `main.cpp`, `App.cpp`, README, merging |
+| _Zainab.M_ | Integration | Repository, shared interfaces, `main.cpp`, `App.cpp`, README, merging |
 | _Name 2_ | Encoder | Input validation, digit patterns, bar widths, barcode rendering |
 | _Name 3_ | Image I/O | Image class, BMP reader and writer, grayscale conversion, test images |
 | _Name 4_ | Decoder | Thresholding, scan lines, run lengths, pattern lookup, upside-down handling |
