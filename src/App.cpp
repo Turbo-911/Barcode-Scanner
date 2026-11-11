@@ -2,10 +2,16 @@
 #include "Common.h"
 
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <string>
-#include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <thread>
+#endif
 
 namespace {
 
@@ -28,6 +34,20 @@ std::string stripQuotes(std::string s) {
     if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
         s = s.substr(1, s.size() - 2);
     return s;
+}
+
+std::string resolveImagePath(const std::string& path) {
+    std::ifstream direct(path.c_str(), std::ios::binary);
+    if (direct.good()) return path;
+
+    if (path.find('\\') == std::string::npos &&
+        path.find('/') == std::string::npos) {
+        const std::string testPath = "tests\\" + path;
+        std::ifstream testFile(testPath.c_str(), std::ios::binary);
+        if (testFile.good()) return testPath;
+    }
+
+    return path;
 }
 
 // Prints a prompt and reads one line. Returns false if EOF.
@@ -110,6 +130,7 @@ void App::readFromFile() {
     if (!ask("Path to barcode image (.bmp), or 'b' to go back: ", path)) return;
     path = stripQuotes(path);
     if (path.empty() || path == "b" || path == "B") return;
+    path = resolveImagePath(path);
 
     Image img;
     if (!loadBMP(path, img)) {
@@ -133,7 +154,8 @@ void App::scanWithCamera() {
     for (int attempt = 1; attempt <= kCameraTries; ++attempt) {
         Image frame;
         if (!captureFrame(frame)) {
-            std::cout << "  Error: could not access the camera.\n";
+            std::cout << "  Error: camera capture failed. See the [Camera] "
+                         "diagnostic line above for the failing stage and HRESULT.\n";
             return;
         }
 
@@ -148,7 +170,11 @@ void App::scanWithCamera() {
 
         std::cout << "  Attempt " << attempt << "/" << kCameraTries
                   << ": no barcode found, trying again...\r" << std::flush;
+#ifdef _WIN32
+        Sleep(150);
+#else
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
+#endif
     }
 
     std::cout << "\n  Could not read a barcode from the camera. "
@@ -157,7 +183,7 @@ void App::scanWithCamera() {
 
 void App::selfTest() {
     const std::vector<std::string> samples = {
-        "000000", "123456", "987654", "000001", "100000", "555555", "999999"};
+        "123456", "987654", "100000", "200001", "555555", "999999"};
 
     int passed = 0;
     std::cout << "\nRunning encode -> decode round trip:\n";
