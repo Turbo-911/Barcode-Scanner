@@ -1,17 +1,23 @@
 #include "App.h"
 #include <exception>
 #include <iostream>
-using namesapce std;
 
-int main() 
+using namespace std;
+
+int main()
 {
-    try {
+    try
+    {
         App app;
         return app.run();
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception& e)
+    {
         cerr << "Fatal error: " << e.what() << "\n";
         return 1;
-    } catch (...) {
+    }
+    catch (...) 
+    {
         cerr << "Fatal error: unknown exception.\n";
         return 1;
     }
