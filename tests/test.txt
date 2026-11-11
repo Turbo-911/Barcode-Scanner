@@ -1,2 +1,50 @@
-This is an empty file. 
-Test images and programs to be added to the 'tests' folder soon.
+================================================================================
+                    QA BARCODE TEST IMAGES SUITE
+================================================================================
+
+All test BMP files in this directory are valid Interleaved 2 of 5 (ITF) barcodes
+matching the team's ITF encoding specification (src/encoder.cpp and README.md).
+They are 8-bit grayscale BMPs directly readable by loadBMP (src/BMP.cpp).
+
+--------------------------------------------------------------------------------
+1. Standard Test Barcodes (decodable to distinct 6-digit numbers):
+--------------------------------------------------------------------------------
+- barcode_123456.bmp  ->  Expected Decoded Digits: 123456 (Sequential ascending)
+- barcode_987654.bmp  ->  Expected Decoded Digits: 987654 (Sequential descending)
+- barcode_100000.bmp  ->  Expected Decoded Digits: 100000 (Trailing zeroes)
+- barcode_555555.bmp  ->  Expected Decoded Digits: 555555 (All identical digits)
+- barcode_999999.bmp  ->  Expected Decoded Digits: 999999 (Maximum allowed digits)
+- barcode_112233.bmp  ->  Expected Decoded Digits: 112233 (Paired digits)
+- barcode_246810.bmp  ->  Expected Decoded Digits: 246810 (Even progression)
+- barcode_314159.bmp  ->  Expected Decoded Digits: 314159 (Pi sequence)
+- barcode_765432.bmp  ->  Expected Decoded Digits: 765432 (High descending)
+- barcode_888888.bmp  ->  Expected Decoded Digits: 888888 (Repeated 8s)
+- barcode_543210.bmp  ->  Expected Decoded Digits: 543210 (Descending to zero)
+- barcode_654321.bmp  ->  Expected Decoded Digits: 654321 (Descending sequence)
+- barcode_102030.bmp  ->  Expected Decoded Digits: 102030 (Alternating zeroes)
+- barcode_908070.bmp  ->  Expected Decoded Digits: 908070 (High alternating)
+- barcode_456789.bmp  ->  Expected Decoded Digits: 456789 (Mid ascending)
+- barcode_135790.bmp  ->  Expected Decoded Digits: 135790 (Odd sequence)
+- barcode_876543.bmp  ->  Expected Decoded Digits: 876543 (High descending)
+- barcode_234567.bmp  ->  Expected Decoded Digits: 234567 (Mid ascending)
+- barcode_345678.bmp  ->  Expected Decoded Digits: 345678 (Mid ascending)
+- barcode_678901.bmp  ->  Expected Decoded Digits: 678901 (Crossing 0 boundary)
+- barcode_789012.bmp  ->  Expected Decoded Digits: 789012 (Crossing 0 boundary)
+- barcode_890123.bmp  ->  Expected Decoded Digits: 890123 (Crossing 0 boundary)
+- barcode_901234.bmp  ->  Expected Decoded Digits: 901234 (Crossing 0 boundary)
+- barcode_192837.bmp  ->  Expected Decoded Digits: 192837 (Interleaved extremes)
+- barcode_462819.bmp  ->  Expected Decoded Digits: 462819 (Arbitrary pattern)
+
+--------------------------------------------------------------------------------
+2. QA Stress Test & Edge Case Barcodes:
+--------------------------------------------------------------------------------
+- test_normal.bmp     ->  Expected Decoded Digits: 123456 (Baseline crisp capture)
+- test_rotated.bmp    ->  Expected Decoded Digits: 987654 (180-deg inverted / upside-down)
+- test_blurry.bmp     ->  Expected Decoded Digits: 555555 (Blurred edges / low contrast)
+- test_noisy.bmp      ->  Expected Decoded Digits: 888888 (Salt & pepper noise)
+- test_small.bmp      ->  Expected Decoded Digits: 314159 (Small module size: 2px)
+- test_large.bmp      ->  Expected Decoded Digits: 654321 (Large module size: 4px)
+- test_inverted.bmp   ->  Expected Decoded Digits: 765432 (Upside-down scanner test)
+
+To regenerate or add more barcodes, run `setup_qa.bat` from the root directory.
+================================================================================
