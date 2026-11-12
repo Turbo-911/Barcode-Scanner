@@ -4,6 +4,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -151,6 +152,8 @@ void App::scanWithCamera() {
     std::cout << "Starting camera... point a barcode at it (up to "
               << kCameraTries << " attempts).\n";
 
+    std::map<std::string, int> recentDetections;
+    std::vector<std::string> detectionWindow;
     for (int attempt = 1; attempt <= kCameraTries; ++attempt) {
         Image frame;
         if (!captureFrame(frame)) {
@@ -161,8 +164,21 @@ void App::scanWithCamera() {
 
         std::string digits;
         if (decodeBarcode(frame, digits)) {
-            printResult(digits);
-            return;
+            detectionWindow.push_back(digits);
+            ++recentDetections[digits];
+            if (detectionWindow.size() > 5) {
+                std::map<std::string, int>::iterator old =
+                    recentDetections.find(detectionWindow.front());
+                if (old != recentDetections.end() && old->second > 0) {
+                    --old->second;
+                }
+                detectionWindow.erase(detectionWindow.begin());
+            }
+
+            if (recentDetections[digits] >= 3) {
+                printResult(digits);
+                return;
+            }
         }
 
         // Keeping the last frame so we can debug why decoding failed.

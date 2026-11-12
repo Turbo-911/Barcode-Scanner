@@ -88,8 +88,30 @@ namespace
             return false;
         }
 
+        // A valid ITF barcode has a consistent narrow width and wide elements
+        // are approximately three times that width. Without this check,
+        // ordinary image texture can be classified as six valid digits.
+        for (int i = 0; i < 37; ++i)
+        {
+            double ratio = runs[i] / narrowEst;
+            if (ratio < 0.45 || ratio > 4.5)
+            {
+                return false;
+            }
+        }
+
+        for (int i = 0; i < 4; ++i)
+        {
+            if (runs[i] > narrowEst * 1.6)
+            {
+                return false;
+            }
+        }
+
         // Stop pattern: runs[34] is wide, runs[35] and runs[36] are narrow
-        if (runs[34] < narrowEst * 1.3)
+        if (runs[34] < narrowEst * 2.0 ||
+            runs[35] > narrowEst * 1.6 ||
+            runs[36] > narrowEst * 1.6)
         {
             return false;
         }
@@ -221,7 +243,6 @@ namespace
                 {
                     continue;
                 }
-
                 bool alternating = true;
                 for (size_t k = 0; k < 37; ++k)
                 {
