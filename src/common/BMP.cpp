@@ -1,4 +1,4 @@
-#include "BMP.h"
+#include "common/BMP.h"
 #include <fstream>
 #include <cstdint>
 #include <vector>

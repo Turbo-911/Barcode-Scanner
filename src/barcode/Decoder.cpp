@@ -1,4 +1,5 @@
-#include "decoder.h"
+#include "barcode/decoder.h"
+#include "barcode/itf_patterns.h"
 
 #include <algorithm>
 #include <vector>
@@ -8,18 +9,7 @@
 namespace
 {
 
-    const char* kPatterns[10] = {
-        "NNWWN",  // 0
-        "WNNNW",  // 1
-        "NWNNW",  // 2
-        "WWNNN",  // 3
-        "NNWNW",  // 4
-        "WNWNN",  // 5
-        "NWWNN",  // 6
-        "NNNWW",  // 7
-        "WNNWN",  // 8
-        "NWNWN"   // 9
-    };
+    // Digit patterns: shared with the encoder via barcode/itf_patterns.h.
 
     struct Run
     {
@@ -69,7 +59,7 @@ namespace
 
         for (int d = 0; d < 10; ++d)
         {
-            if (pattern == kPatterns[d])
+            if (pattern == itf::kDigitPatterns[d])
             {
                 return static_cast<char>('0' + d);
             }

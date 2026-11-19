@@ -1,4 +1,4 @@
-#include "Image.h"
+#include "common/image.h"
 bool createImage(Image& img, int width, int height)
 {
     if (width <= 0 || height <= 0)

@@ -24,7 +24,7 @@
 #include <cstring>
 #include <iomanip>
 
-#include "camera.h"
+#include "camera/camera.h"
 
 #if defined(BARCODE_HAS_MEDIA_FOUNDATION)
 

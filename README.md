@@ -1,5 +1,5 @@
 # Barcode-Scanner
-A desktop application written in C++ that converts a six-digit number into a barcode image and reads a barcode back into its six-digit number, from either an image file or a camera. It is built without any third-party libraries.
+A desktop application written in C++ that converts a six-digit number into a barcode image and reads a barcode back into its six-digit number, from either an image file or a camera. The Phase 1 core is built without third-party libraries; the Phase 2 GUI uses SFML 3.
 
 ## Features
 
@@ -60,20 +60,59 @@ The full barcode layout is:
 ## Project Structure
 
 ```text
-barcode-scanner-cpp/
+Barcode-Scanner/
+├── run_gui.bat           ONE command: builds everything and launches the GUI
+├── CMakeLists.txt        Optional CMake build (same sources)
+├── Data/                 Phase 2 data files (repository names)
+│   ├── product.txt       Products: id barcode acronym name unit price tax discount qty barcodeFile #
+│   ├── order.txt         Orders: orderId date time customer contact status amount mode merchant #
+│   ├── orderDetail.txt   Order lines: orderId productId productBarcode quantity #
+│   └── bill.txt          Bill rows (one per product): billId customer orderId acronym price discount qty totals status #
+├── assets/fonts/         Fonts bundled for the GUI
+├── barcodes/             Sample barcode images
 ├── src/
-│   ├── main.cpp          Program entry point
-│   ├── App.h / App.cpp   Console menu and integration of all modules
-│   ├── Common.h          Shared types and function declarations
-│   ├── Encoder.h / .cpp  Number to bar widths, and barcode rendering
-│   ├── Image.h / .cpp    Image class and grayscale handling
-│   ├── BMP.h / .cpp      BMP file reader and writer
-│   ├── Decoder.h / .cpp  Image to number
-│   └── Camera.h / .cpp   Camera frame capture
-├── tests/                Test images and test programs
-├── README.md
-└── .gitignore
+│   ├── main.cpp          Entry point: GUI by default, --console / --selftest / --screenshot
+│   ├── App.h / App.cpp   Phase 1 console menu
+│   ├── barcode/          ITF encoder/decoder, shared patterns, encoder/decoder interfaces
+│   ├── camera/           Webcam capture (Media Foundation) + frame-source interface
+│   ├── common/           common.h (shared types), BMP codec, image helpers, image_io,
+│   │                     string_utils (file text rules), date_time (the only clock reader)
+│   ├── domain/           Pure data: product.h, order.h (Order + OrderDetail), bill.h,
+│   │                     enums (order statuses / payment modes)
+│   ├── persistence/      record_file (only raw file IO), one serialiser per data file,
+│   │                     repository interfaces + file repositories (i_product_repo,
+│   │                     i_order_repo, i_bill_repo)
+│   ├── services/         id_generator, bill_calculator (money maths), bill_service,
+│   │                     product_service (incl. THE stock rule), order_service, scan_service
+│   └── ui/               SFML GUI: BarcodeStudioGui, Widgets, Theme (presentation only)
+├── tests/                Test barcode images, pos_selftest.cpp, seed_history.cpp
+└── docs/DESIGN.md        Architecture, SE principles, format decisions
 ```
+
+## Phase 2 — Point of Sale (Chili Mili)
+
+On top of the Phase 1 barcode core, the GUI is a small store POS:
+
+- **Products** are kept in `Data/product.txt`; scanning a product's
+  barcode (camera or file) or pressing **Description** in the POS
+  screen shows its full specification.
+- **POS Order screen:** scan or type barcodes, set quantities — a
+  product is added only when the required quantity is within the
+  available stock (the stock rule lives in
+  `ProductService::canSell`). **Generate Bill** writes the order to
+  `Data/order.txt`, its lines to `Data/orderDetail.txt` and the bill
+  to `Data/bill.txt`, shows the bill on screen, and reduces stock.
+- The design follows SRP / OCP throughout — see `docs/DESIGN.md`.
+
+## Running
+
+```text
+.\run_gui.bat
+```
+
+That is the only step: it builds with MSYS2 UCRT64 g++ + SFML 3 and
+launches the GUI. Other modes: `barcode_studio_gui.exe --console`
+(Phase 1 console menu), `--selftest` (headless round-trip check).
 
 ## Usage
 

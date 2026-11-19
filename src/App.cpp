@@ -1,5 +1,9 @@
 #include "App.h"
-#include "Common.h"
+#include "common/common.h"
+#include "common/image_io.h"
+#include "barcode/decoder.h"
+#include "camera/camera.h"
+#include "services/scan_service.h"
 
 #include <chrono>
 #include <fstream>
@@ -120,7 +124,7 @@ void App::generateBarcode() {
     path = stripQuotes(path);
     if (path.empty()) path = defaultName;
 
-    if (saveBMP(img, path))
+    if (imageio::saveImage(img, path))
         std::cout << "  Saved to: " << path << "\n";
     else
         std::cout << "  Error: could not save the file '" << path << "'.\n";
@@ -134,7 +138,7 @@ void App::readFromFile() {
     path = resolveImagePath(path);
 
     Image img;
-    if (!loadBMP(path, img)) {
+    if (!imageio::loadImage(path, img)) {
         std::cout << "  Error: could not open '" << path
                   << "'. Check the path and that it is a valid BMP file.\n";
         return;
@@ -152,37 +156,29 @@ void App::scanWithCamera() {
     std::cout << "Starting camera... point a barcode at it (up to "
               << kCameraTries << " attempts).\n";
 
-    std::map<std::string, int> recentDetections;
-    std::vector<std::string> detectionWindow;
+    // The scan pipeline is interface-based (OCP): frames come from an
+    // IFrameSource, decoding is an IBarcodeDecoder, and ScanService
+    // owns the "same code 3 times within the last 5 decodes" rule
+    // that decides when a scan is trusted.
+    CameraFrameSource camera;
+    ItfBarcodeDecoder decoder;
+    ScanService scanner(decoder);
+
     for (int attempt = 1; attempt <= kCameraTries; ++attempt) {
         Image frame;
-        if (!captureFrame(frame)) {
+        if (!camera.capture(frame)) {
             std::cout << "  Error: camera capture failed. See the [Camera] "
                          "diagnostic line above for the failing stage and HRESULT.\n";
             return;
         }
 
-        std::string digits;
-        if (decodeBarcode(frame, digits)) {
-            detectionWindow.push_back(digits);
-            ++recentDetections[digits];
-            if (detectionWindow.size() > 5) {
-                std::map<std::string, int>::iterator old =
-                    recentDetections.find(detectionWindow.front());
-                if (old != recentDetections.end() && old->second > 0) {
-                    --old->second;
-                }
-                detectionWindow.erase(detectionWindow.begin());
-            }
-
-            if (recentDetections[digits] >= 3) {
-                printResult(digits);
-                return;
-            }
+        if (scanner.feedFrame(frame)) {
+            printResult(scanner.confirmedCode());
+            return;
         }
 
         // Keeping the last frame so we can debug why decoding failed.
-        if (attempt == kCameraTries) saveBMP(frame, "last_capture.bmp");
+        if (attempt == kCameraTries) imageio::saveImage(frame, "last_capture.bmp");
 
         std::cout << "  Attempt " << attempt << "/" << kCameraTries
                   << ": no barcode found, trying again...\r" << std::flush;

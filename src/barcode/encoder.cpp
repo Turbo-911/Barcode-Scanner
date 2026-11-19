@@ -1,4 +1,5 @@
-#include "Common.h"
+#include "common/common.h"
+#include "barcode/itf_patterns.h"
 #include <iostream>
 namespace {
 
@@ -6,19 +7,7 @@ namespace {
     const int kWide = 3;             // wide = 3x narrow (README).
     const int kQuietZoneModules = 10;
 
-    // N = narrow, W = wide; exactly two W per digit.
-    const char* kPatterns[10] = {
-        "NNWWN",  // 0
-        "WNNNW",  // 1
-        "NWNNW",  // 2
-        "WWNNN",  // 3
-        "NNWNW",  // 4
-        "WNWNN",  // 5
-        "NWWNN",  // 6
-        "NNNWW",  // 7
-        "WNNWN",  // 8
-        "NWNWN"   // 9
-    };
+    // Digit patterns: shared with the decoder via barcode/itf_patterns.h.
 
     int widthOf(char c) { return c == 'W' ? kWide : kNarrow; }
 
@@ -44,8 +33,8 @@ vector<int> encodeToWidths(const string& digits) {
 
     // Each pair: first digit -> bars, second digit -> spaces.
     for (int p = 0; p < 3; ++p) {
-        const char* bars = kPatterns[digits[2 * p] - '0'];
-        const char* spaces = kPatterns[digits[2 * p + 1] - '0'];
+        const char* bars = itf::kDigitPatterns[digits[2 * p] - '0'];
+        const char* spaces = itf::kDigitPatterns[digits[2 * p + 1] - '0'];
         for (int i = 0; i < 5; ++i) {
             widths.push_back(widthOf(bars[i]));    // bar
             widths.push_back(widthOf(spaces[i]));  // space

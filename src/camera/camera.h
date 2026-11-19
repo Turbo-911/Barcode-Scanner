@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Common.h"
+#include "common/common.h"
+#include "camera/i_frame_source.h"
 #include <vector>
 
 struct IMFSourceReader;
@@ -43,3 +44,13 @@ private:
 };
 
 bool captureFrame(Image& out);
+
+// CameraFrameSource - the IFrameSource implementation for the real
+// camera. It forwards to the captureFrame() free function above, so
+// interface-based callers (e.g. the console scan flow through
+// ScanService) and function-based callers share one implementation.
+class CameraFrameSource : public IFrameSource
+{
+public:
+    bool capture(Image& out) override { return captureFrame(out); }
+};
