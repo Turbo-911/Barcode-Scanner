@@ -82,6 +82,7 @@ private:
     std::atomic<bool> m_cameraRunning{false};
     std::atomic<bool> m_cameraPaused{false};
     std::atomic<bool> m_scanLocked{false};
+    std::atomic<int> m_scanGeneration{0};  // bumped to force a fresh scan candidate
     std::string m_cameraStatus;
     Image m_latestCameraFrame;
     bool m_newCameraFrameReady{false};
@@ -210,4 +211,5 @@ private:
     void updateCameraTexture(const Image& frame);
     void onBarcodeScanned(const std::string& code);
     void resetScan();
+    void resetScanState();
 };

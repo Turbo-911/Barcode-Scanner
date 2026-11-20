@@ -624,7 +624,16 @@ void BarcodeStudioGui::handleEvents()
             {
                 if (m_showBill)
                 {
-                    if (m_billCloseBtn.handleClick(pos)) m_showBill = false;
+                    if (m_billCloseBtn.handleClick(pos))
+                    {
+                        m_showBill = false;
+                        // Order finished: reset the scan state (and
+                        // restart a running camera) so the next
+                        // order's first scan works like the first
+                        // order's did.
+                        resetScanState();
+                        if (m_cameraRunning) { stopCamera(); startCamera(); }
+                    }
                 }
                 else
                 {
@@ -1333,7 +1342,7 @@ void BarcodeStudioGui::startCamera()
     if (m_cameraRunning) return;
     if (m_cameraThread.joinable()) m_cameraThread.join();
     m_cameraAttempts = 0;
-    m_consistentCount = 0;
+    resetScanState();
     m_cameraRunning = true;
     m_cameraPaused = false;
     {
@@ -1377,10 +1386,21 @@ void BarcodeStudioGui::cameraWorkerLoop()
 
     std::string candidate;
     int candidateCount = 0;
+    int seenGeneration = m_scanGeneration.load();
     auto lastScan = std::chrono::steady_clock::now();
 
     while (m_cameraRunning)
     {
+        // A reset (new order, bill closed, camera restarted) bumps the
+        // generation: drop any half-built candidate so the next scan
+        // needs a fresh set of consistent decodes.
+        const int gen = m_scanGeneration.load();
+        if (gen != seenGeneration)
+        {
+            seenGeneration = gen;
+            candidate.clear();
+            candidateCount = 0;
+        }
         if (m_cameraPaused)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(40));
@@ -1472,13 +1492,28 @@ void BarcodeStudioGui::onBarcodeScanned(const std::string& code)
     showToast("Barcode " + code + " detected & generated!", true);
 }
 
+void BarcodeStudioGui::resetScanState()
+{
+    // Forget everything about the scan in progress: unlock, drop any
+    // code that was detected but not yet picked up, and bump the
+    // generation so the camera worker drops its current candidate.
+    // Called at every order boundary (bill generated/closed, New
+    // Order, camera start) - a stale candidate or lock left over
+    // from the previous order used to block the next order's scans.
+    ++m_scanGeneration;
+    m_scanLocked = false;
+    m_consistentCount = 0;
+    std::lock_guard<std::mutex> lock(m_cameraMutex);
+    m_newCodeScanned = false;
+    m_scannedCode.clear();
+}
+
 void BarcodeStudioGui::resetScan()
 {
     m_decoded.clear();
     m_hasGeneratedBarcode = false;
     m_generatedBarcodePath.clear();
-    m_scanLocked = false;
-    m_consistentCount = 0;
+    resetScanState();
     showToast("Scanning again - point the webcam at a barcode.", true);
 }
 
@@ -1642,6 +1677,10 @@ void BarcodeStudioGui::posNewOrder()
     m_posBarcode.setText("");
     m_posQty.setText("1");
     m_posBarcode.setFocused(true);
+    // The next order scans from a clean slate: fresh scan state and,
+    // if the camera is on, a fresh camera session.
+    resetScanState();
+    if (m_cameraRunning) { stopCamera(); startCamera(); }
 }
 
 void BarcodeStudioGui::drawPosCameraCard(const sf::FloatRect& card)

@@ -2,11 +2,11 @@
 1002 987654 BREAD Branded_Bread count 120.00 5.00 10.00 25 tests/barcode_987654.bmp #
 1003 100000 EGGS12 Farm_Eggs_Dozen count 320.00 15.00 0.00 30 tests/barcode_100000.bmp #
 1004 200001 RICE5KG Basmati_Rice weight 1450.00 50.00 100.00 12 tests/barcode_200001.bmp #
-1005 555555 SUGAR1KG White_Sugar weight 210.00 8.00 5.00 50 tests/barcode_555555.bmp #
+1005 555555 SUGAR1KG White_Sugar weight 210.00 8.00 5.00 40 tests/barcode_555555.bmp #
 1006 999999 TEA250 Lipton_Tea count 450.00 25.00 20.00 20 tests/barcode_999999.bmp #
 1007 112233 OIL1L Cooking_Oil count 560.00 30.00 0.00 8 tests/barcode_112233.bmp #
 1008 246810 BISC Biscuit_Pack count 80.00 4.00 5.00 60 tests/barcode_246810.bmp #
-1009 334455 PASTA Pasta_Pack count 95.00 4.00 0.00 45 tests/barcode_334455.bmp #
+1009 334455 PASTA Pasta_Pack count 95.00 4.00 0.00 43 tests/barcode_334455.bmp #
 1010 445566 SALT Salt_Pack count 60.00 2.00 0.00 80 tests/barcode_445566.bmp #
 1011 556677 COFFEE Coffee_Jar count 850.00 40.00 50.00 15 tests/barcode_556677.bmp #
 1012 667788 JAM250 Fruit_Jam count 380.00 18.00 10.00 22 tests/barcode_667788.bmp #
