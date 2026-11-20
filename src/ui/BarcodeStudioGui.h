@@ -60,6 +60,8 @@ private:
     // Camera widgets
     ui::PinkButton m_cameraToggleBtn;  // Start / Stop
     ui::PinkButton m_scanNextBtn;      // Scan Another
+    ui::PinkButton m_camAddBtn;        // Camera screen: decoded product -> order
+    ui::PinkButton m_fileAddBtn;       // File screen: decoded product -> order
 
     // Self-test widgets
     ui::PinkButton m_runTest;
@@ -119,7 +121,7 @@ private:
     std::optional<Product> m_descProduct;
     std::string m_lastScannedCode;  // last code looked up on the POS screen      // last product described (scan/lookup)
     std::vector<Product> m_productsCache;
-    std::string m_posMessage{"Scan a barcode or type it, set qty, then Add to Order."};
+    std::string m_posMessage{"Scan an item to add it, or type a barcode, set qty, then Add to Order."};
     bool m_posMessageOk{true};
     CompletedBill m_lastBill;
     bool m_showBill{false};
@@ -133,6 +135,8 @@ private:
     void refreshProducts();
     void posDescribe();
     void posAdd();
+    bool posAddOne(const std::string& barcode);  // scan flows: the scan IS the add (qty 1)
+    void addDecodedToOrder();  // Camera/File screens: decoded product -> cart + POS screen
     void posCheckout();
     void posNewOrder();
     void drawBillOverlay();

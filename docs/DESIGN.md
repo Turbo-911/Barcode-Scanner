@@ -229,3 +229,34 @@ The POS right column (description / customer & payment / totals)
 is wider (244 -> 284) and starts further left; the entry and cart
 cards narrowed to match, with the cart quantity cluster and the
 Start Cam button re-anchored, and the customer inputs widened.
+
+## Camera scan after an order (v16 fix)
+
+After the first order, camera scanning could stop responding: the
+worker's half-built candidate and the scan lock were never reset
+at order boundaries. There is now one `resetScanState()` (unlock,
+drop any pending code, bump a generation counter the worker watches
+to drop its candidate), called on camera start, Scan Another, bill
+close and New Order; bill close and New Order also restart a running
+camera so each order gets a completely fresh session.
+
+## Fewer presses: scan-to-order flow (v17)
+
+One barcode used to be scanned twice - once on the Camera/File
+screens just to decode it, then again in POS to buy it - and every
+POS scan still needed a separate Add to Order press. Three changes
+remove the repeated work:
+
+- POS camera scans add the item directly (`posAddOne`): one scan =
+  one unit in the cart, scanning the same item again adds another,
+  like a supermarket till. Typing a barcode still uses the qty box
+  and Add to Order as before, and OrderService enforces stock for
+  both paths.
+- The Camera Scan and Read from File screens show an Add to Order
+  button when the decoded barcode belongs to a product; one click
+  adds it and lands on the POS screen (`addDecodedToOrder`), so a
+  decode never has to be repeated as a POS scan.
+- The Camera and POS screens share one camera session: switching
+  between them no longer stops the camera (only the scan state is
+  reset), so there is no Start Cam press in the middle of the flow.
+  Leaving for any other screen still stops the camera.

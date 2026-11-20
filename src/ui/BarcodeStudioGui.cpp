@@ -114,6 +114,8 @@ BarcodeStudioGui::BarcodeStudioGui()
       m_decodeAttempted(false), m_decodeOk(false),
       m_cameraToggleBtn(m_font, "Start Camera", {246.0f, 84.0f}, {150.0f, 36.0f}, true),
       m_scanNextBtn(m_font, "Scan Another", {406.0f, 84.0f}, {190.0f, 36.0f}, false),
+      m_camAddBtn(m_font, "Add to Order", {706.0f, 560.0f}, {200.0f, 38.0f}),
+      m_fileAddBtn(m_font, "Add to Order", {644.0f, 522.0f}, {200.0f, 38.0f}),
       m_runTest(m_font, "Run Self-Test", {272.0f, 126.0f}, {220.0f, 44.0f}),
       m_testPassed(0),
       m_toast(m_font), m_hasPreview(false),
@@ -205,6 +207,22 @@ bool BarcodeStudioGui::screenshot(const std::string& path, int view)
             updateCameraTexture(frame);
         }
         if (path.find("bill") != std::string::npos) posCheckout();  // QA: show the bill
+        if (path.find("autoadd") != std::string::npos)  // QA: two camera scans of White Sugar
+        {
+            m_posBarcode.setText("555555");
+            posDescribe();
+            if (m_descProduct) posAddOne("555555");
+            if (m_descProduct) posAddOne("555555");
+        }
+    }
+    if (path.find("toorder") != std::string::npos)  // QA: a decoded product on Camera/File
+    {
+        if (m_view == View::CameraScanner) onBarcodeScanned("555555");
+        if (m_view == View::FileScanner)
+        {
+            m_pathInput.setText("tests/barcode_555555.bmp");
+            decodeFile();
+        }
     }
     if (path.find("unknown") != std::string::npos)  // QA: scan a code with no product
     {
@@ -306,7 +324,14 @@ void BarcodeStudioGui::celebrate(const std::string& bubble, const sf::Vector2f& 
 void BarcodeStudioGui::switchView(View next)
 {
     if (next == m_view) return;
-    if (m_view == View::CameraScanner || m_view == View::PosOrder) stopCamera();
+    // The Camera and POS screens share one camera: moving between
+    // them keeps it running (with a fresh scan state), so the user
+    // never has to restart it mid-flow. Leaving for any other
+    // screen stops it, as before.
+    const bool fromCamView = (m_view == View::CameraScanner || m_view == View::PosOrder);
+    const bool toCamView = (next == View::CameraScanner || next == View::PosOrder);
+    if (fromCamView && !toCamView) stopCamera();
+    else if (fromCamView && toCamView) resetScanState();
     if (next == View::PosOrder || next == View::Products) refreshProducts();
     m_modeDrop.close();
     m_statusDrop.close();
@@ -611,6 +636,8 @@ void BarcodeStudioGui::handleEvents()
                 m_pathInput.handleClick(pos);
                 if (m_browse.handleClick(pos)) browseFile();
                 else if (m_decode.handleClick(pos)) decodeFile();
+                else if (m_decodeOk && m_descProduct && m_fileAddBtn.handleClick(pos))
+                    addDecodedToOrder();
             }
             else if (m_view == View::CameraScanner)
             {
@@ -619,6 +646,8 @@ void BarcodeStudioGui::handleEvents()
                     if (m_cameraRunning) stopCamera(); else startCamera();
                 }
                 else if (m_scanNextBtn.handleClick(pos)) resetScan();
+                else if (m_hasGeneratedBarcode && m_descProduct && m_camAddBtn.handleClick(pos))
+                    addDecodedToOrder();
             }
             else if (m_view == View::PosOrder)
             {
@@ -744,6 +773,8 @@ void BarcodeStudioGui::update(float deltaSeconds)
     m_decode.update(cpos, deltaSeconds);
     m_cameraToggleBtn.update(cpos, deltaSeconds);
     m_scanNextBtn.update(cpos, deltaSeconds);
+    m_camAddBtn.update(cpos, deltaSeconds);
+    m_fileAddBtn.update(cpos, deltaSeconds);
     m_runTest.update(cpos, deltaSeconds);
     m_posBarcode.update(deltaSeconds);
     m_posQty.update(deltaSeconds);
@@ -815,11 +846,13 @@ void BarcodeStudioGui::update(float deltaSeconds)
         }
         else if (codeDetected && !newCode.empty())
         {
-            // POS: a camera scan fills the barcode box, shows the product
-            // description, and unlocks so the next item can be scanned.
+            // POS: a camera scan fills the barcode box, shows the
+            // product, and adds one unit straight to the order - like
+            // a supermarket till. Scanning the same item again adds
+            // another unit. Then unlock so the next item can be scanned.
             m_posBarcode.setText(newCode);
             posDescribe();
-            showToast("Scanned " + newCode + " - set qty and Add to Order.", true);
+            if (m_descProduct) posAddOne(newCode);
             resetScan();
         }
     }
@@ -1072,10 +1105,13 @@ void BarcodeStudioGui::drawFileScanner()
         rt().draw(makeText(m_decoded, 34, {644.0f, 366.0f}, ui::theme::ActiveText));
         ui::theme::drawStatus(rt(), m_font, {644.0f, 436.0f}, {160.0f, 32.0f}, "Decode Success", true);
         if (m_descProduct)
+        {
             rt().draw(makeText("Product: " + m_descProduct->name + "  -  PKR " +
                 stringutils::money(m_descProduct->unitPrice) + "  (stock " +
                 std::to_string(m_descProduct->availableQuantity) + ")",
                 12, {644.0f, 486.0f}, ui::theme::ActiveText));
+            m_fileAddBtn.draw(rt());
+        }
         else if (m_decodeOk)
             rt().draw(makeText("No product found for barcode " + m_decoded +
                 " in Data/product.txt.",
@@ -1136,10 +1172,13 @@ void BarcodeStudioGui::drawCameraScanner()
         rt().draw(makeText(shorten(m_generatedBarcodePath, 34), 11, {706.0f, 442.0f}, ui::theme::Success));
         ui::theme::drawStatus(rt(), m_font, {706.0f, 472.0f}, {190.0f, 30.0f}, "Decoded & Generated", true);
         if (m_descProduct)
+        {
             rt().draw(makeText("Product: " + shorten(m_descProduct->name, 24) + "\nPKR " +
                 stringutils::money(m_descProduct->unitPrice) + " - stock " +
                 std::to_string(m_descProduct->availableQuantity),
                 12, {706.0f, 516.0f}, ui::theme::ActiveText));
+            m_camAddBtn.draw(rt());
+        }
         else
             rt().draw(makeText("No product found for barcode " + m_decoded +
                 "\nNot in Data/product.txt - add the product first.",
@@ -1609,6 +1648,60 @@ void BarcodeStudioGui::posAdd()
     spawnBurst({640.0f, 320.0f}, 12);
     m_posQty.setText("1");
     m_posBarcode.setFocused(true);
+}
+
+bool BarcodeStudioGui::posAddOne(const std::string& barcode)
+{
+    // One-unit add for the scan flows (POS camera scan, and the Add
+    // to Order buttons on the Camera/File screens): the scan IS the
+    // add, so there is no qty typing and no separate Add press.
+    // Stock is still enforced by OrderService, exactly like posAdd().
+    const std::string err = m_orderService.addLine(barcode, 1);
+    if (err == "not-found")
+    {
+        m_posMessage = "No product with barcode " + barcode + " in Data/product.txt.";
+        m_posMessageOk = false;
+        return false;
+    }
+    if (err == "low-stock")
+    {
+        const auto p = m_productService.findByBarcode(barcode);
+        m_posMessage = "Not enough stock" + (p ? " for " + p->name + " (available " +
+            std::to_string(p->availableQuantity) + ")." : ".");
+        m_posMessageOk = false;
+        return false;
+    }
+    if (!err.empty())
+    {
+        m_posMessage = "Could not add that item to the order.";
+        m_posMessageOk = false;
+        return false;
+    }
+    const auto p = m_productService.findByBarcode(barcode);
+    if (p) m_descProduct = p;
+    int inCart = 0;
+    for (const auto& line : m_orderService.lines())
+        if (line.product.barcode == barcode) inCart = line.quantity;
+    m_posMessage = "Added " + (p ? p->name : barcode) + " to the order" +
+        (inCart > 1 ? " (x" + std::to_string(inCart) + " in cart)." : ".");
+    m_posMessageOk = true;
+    spawnBurst({640.0f, 320.0f}, 12);
+    return true;
+}
+
+void BarcodeStudioGui::addDecodedToOrder()
+{
+    // The Camera/File screens decoded a product: one click puts it
+    // in the order and lands on the POS screen - no second scan.
+    if (m_decoded.empty() || !m_descProduct) return;
+    if (!posAddOne(m_decoded))
+    {
+        m_mascotText = "Couldn't add that -\nnot enough stock!";
+        m_mascotHappy = 1.5f;
+        return;
+    }
+    switchView(View::PosOrder);
+    m_posBarcode.setText(m_decoded);
 }
 
 void BarcodeStudioGui::posCheckout()
