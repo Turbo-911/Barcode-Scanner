@@ -1,0 +1,43 @@
+# Incremental build used by run_gui.bat (MSYS2 UCRT64, mingw32-make).
+# Each source file compiles once into build_obj/; later builds only
+# recompile what changed (the .d files track header dependencies),
+# then link. Delete the build_obj folder to force a full rebuild.
+# (Named Makefile.gui because the repo .gitignore ignores "Makefile".)
+.RECIPEPREFIX = >
+
+CXX      := g++
+CXXFLAGS := -std=c++17 -O2 -D_WIN32 -Isrc -MMD -MP
+LDLIBS   := -lsfml-graphics -lsfml-window -lsfml-system -lmf -lmfplat -lmfreadwrite -lmfuuid -lole32 -loleaut32 -lcomdlg32 -luuid
+TARGET   := barcode_studio_gui.exe
+OBJDIR   := build_obj
+
+SRCS := src/main.cpp src/App.cpp \
+    src/barcode/encoder.cpp src/barcode/Decoder.cpp \
+    src/camera/camera.cpp \
+    src/common/BMP.cpp src/common/image.cpp src/common/image_io.cpp \
+    src/common/string_utils.cpp src/common/date_time.cpp \
+    src/domain/enums.cpp \
+    src/persistence/record_file.cpp src/persistence/product_serialiser.cpp src/persistence/order_serialiser.cpp \
+    src/persistence/order_detail_serialiser.cpp src/persistence/bill_serialiser.cpp \
+    src/persistence/i_product_repo.cpp src/persistence/i_order_repo.cpp src/persistence/i_bill_repo.cpp \
+    src/services/id_generator.cpp src/services/bill_calculator.cpp src/services/bill_service.cpp \
+    src/services/product_services.cpp src/services/order_service.cpp src/services/scan_service.cpp \
+    src/ui/BarcodeStudioGui.cpp src/ui/Widgets.cpp
+
+OBJS := $(SRCS:%.cpp=$(OBJDIR)/%.o)
+DEPS := $(OBJS:.o=.d)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+>$(CXX) $(OBJS) -o $@ $(LDLIBS)
+
+$(OBJDIR)/%.o: %.cpp
+>$(CXX) $(CXXFLAGS) -c $< -o $@
+
+-include $(DEPS)
+
+clean:
+>if exist $(OBJDIR) rmdir /s /q $(OBJDIR)
+
+.PHONY: all clean
