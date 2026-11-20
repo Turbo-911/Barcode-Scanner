@@ -36,7 +36,7 @@ if exist "C:\msys64\ucrt64\bin\mingw32-make.exe" (
     for %%D in (src src\barcode src\camera src\common src\domain src\persistence src\services src\ui) do (
         if not exist "build_obj\%%D" mkdir "build_obj\%%D"
     )
-    echo Building Chili Mili Barcode POS Studio (only changed files)...
+    echo Building Chili Mili Barcode POS Studio - only changed files...
     "C:\msys64\ucrt64\bin\mingw32-make.exe" -j%NUMBER_OF_PROCESSORS% -f Makefile.gui
     if errorlevel 1 (
         echo.
@@ -45,7 +45,7 @@ if exist "C:\msys64\ucrt64\bin\mingw32-make.exe" (
         exit /b 1
     )
 ) else (
-    echo Building Chili Mili Barcode POS Studio (full build, one moment)...
+    echo Building Chili Mili Barcode POS Studio - full build, one moment...
     "C:\msys64\ucrt64\bin\g++.exe" -std=c++17 -O2 -D_WIN32 -Isrc ^
         src\main.cpp src\App.cpp ^
         src\barcode\encoder.cpp src\barcode\Decoder.cpp ^
