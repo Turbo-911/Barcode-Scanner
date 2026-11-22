@@ -4,11 +4,20 @@
 #include "ui/Theme.h"
 #include "common/common.h"
 #include "domain/product.h"
+#include "domain/order.h"
+#include "domain/bill.h"
+#include "domain/enums.h"
 #include "persistence/i_product_repo.h"
 #include "persistence/i_order_repo.h"
 #include "persistence/i_bill_repo.h"
+#include "persistence/i_bill_detail_repo.h"
+#include "persistence/i_category_repo.h"
+#include "persistence/i_seasons_repo.h"
 #include "services/product_service.h"
 #include "services/order_service.h"
+#include "services/category_service.h"
+#include "services/seasons_service.h"
+#include "services/report_service.h"
 
 #include <optional>
 
@@ -20,23 +29,29 @@
 #include <thread>
 #include <vector>
 
-// BarcodeStudioGui — SFML 3 GUI for the Chili Mili barcode POS.
-// Screens: Generator, File Scanner, Camera Scanner, POS Order,
-// Products, Self-Test. Phase 1 screens only CALL the existing core
-// functions; Phase 2 screens call the POS services (OrderService /
-// ProductService), which own all file and money logic (SRP).
-// It only CALLS the existing core functions (isValidCode, renderBarcode,
-// loadBMP/saveBMP, decodeBarcode, captureFrame); it changes none of them.
+// BarcodeStudioGui - SFML 3 GUI for the Chili Mili barcode POS.
+// Screens: Generator, File Scanner, Camera Scanner, POS Order, Products,
+// Self-Test, plus the manager-only screens added in Phase 3
+// (Categories, Seasons, Inventory, ProductEdit, Reports) and the
+// cashier screens POS Held Orders / Order Edit / Bill Print.
+// The GUI only CALLS services (ProductService / OrderService /
+// CategoryService / SeasonsService / ReportService); those services own
+// every rule and every file write (SRP).
 class BarcodeStudioGui
 {
 public:
     BarcodeStudioGui();
     ~BarcodeStudioGui();
     int run();
-    bool screenshot(const std::string& path, int view = -1);  // draw one frame and save it (dev/QA)
+    bool screenshot(const std::string& path, int view = -1);
 
 private:
-    enum class View { Generator, FileScanner, CameraScanner, PosOrder, Products, SelfTest };
+    enum class View
+    {
+        Generator, FileScanner, CameraScanner, PosOrder, Products, SelfTest,
+        Categories, Seasons, Inventory, ProductEdit, Reports,
+        HeldOrders, OrderEdit, BillPrint
+    };
 
     sf::RenderWindow m_window;
     sf::Font m_font;
@@ -58,10 +73,10 @@ private:
     bool m_decodeOk;
 
     // Camera widgets
-    ui::PinkButton m_cameraToggleBtn;  // Start / Stop
-    ui::PinkButton m_scanNextBtn;      // Scan Another
-    ui::PinkButton m_camAddBtn;        // Camera screen: decoded product -> order
-    ui::PinkButton m_fileAddBtn;       // File screen: decoded product -> order
+    ui::PinkButton m_cameraToggleBtn;
+    ui::PinkButton m_scanNextBtn;
+    ui::PinkButton m_camAddBtn;
+    ui::PinkButton m_fileAddBtn;
 
     // Self-test widgets
     ui::PinkButton m_runTest;
@@ -84,7 +99,7 @@ private:
     std::atomic<bool> m_cameraRunning{false};
     std::atomic<bool> m_cameraPaused{false};
     std::atomic<bool> m_scanLocked{false};
-    std::atomic<int> m_scanGeneration{0};  // bumped to force a fresh scan candidate
+    std::atomic<int> m_scanGeneration{0};
     std::string m_cameraStatus;
     Image m_latestCameraFrame;
     bool m_newCameraFrameReady{false};
@@ -102,94 +117,153 @@ private:
     bool m_hasGeneratedBarcode{false};
     std::string m_generatedBarcodePath;
 
-    // ---- Phase 2 POS (Chili Mili) ----
-    // Composition root: the GUI wires repositories -> services once.
+    // ---- Repositories (composition root) ----
     ProductFileRepository m_productRepo;
     OrderFileRepository m_orderRepo;
     OrderDetailFileRepository m_detailRepo;
     BillFileRepository m_billRepo;
+    BillDetailFileRepository m_billDetailRepo;
+    CategoryFileRepository m_categoryRepo;
+    SeasonsFileRepository m_seasonsRepo;
+
+    // ---- Services ----
+    CategoryService m_categoryService;
+    SeasonsService m_seasonsService;
     ProductService m_productService;
     OrderService m_orderService;
+    ReportService m_reportService;
 
+    // ---- POS (existing) ----
     ui::PinkTextBox m_posBarcode, m_posQty, m_posCustomer, m_posContact;
     ui::PinkButton m_posDescBtn, m_posAddBtn, m_posCamBtn;
     ui::PinkDropdown m_modeDrop, m_statusDrop, m_merchantDrop;
-    int m_modeIdxCache{0};  // last payment mode (merchant list follows it)
+    int m_modeIdxCache{0};
     ui::PinkButton m_posBillBtn, m_posNewBtn, m_productsRefresh, m_billCloseBtn;
     ui::PinkButton m_productsPrev, m_productsNext;
-    int m_productsScroll{0};  // first visible product row (mouse-wheel scrolling)
+    int m_productsScroll{0};
     std::optional<Product> m_descProduct;
-    std::string m_lastScannedCode;  // last code looked up on the POS screen      // last product described (scan/lookup)
+    std::string m_lastScannedCode;
     std::vector<Product> m_productsCache;
     std::string m_posMessage{"Scan an item to add it, or type a barcode, set qty, then Add to Order."};
     bool m_posMessageOk{true};
     CompletedBill m_lastBill;
     bool m_showBill{false};
     bool m_fullscreen{false};
-    // Responsive layout: the UI fills the whole window (no letterbox
-    // bars). Layout height stays 680 units; the width grows with the
-    // window (m_w >= 1000) and right-hand panels anchor to m_w.
+
+    // ---- Phase 3: role, POS extras, manager state ----
+    UserRole m_role{UserRole::Cashier};
+    ui::PinkButton m_roleBtn;
+
+    // POS extras (special discount + amount received + hold + resume + print)
+    ui::PinkTextBox m_posSpecialPct;   // 0..8 (clamped)
+    ui::PinkTextBox m_posAmount;       // amount received (digits / dot)
+    ui::PinkButton m_posHoldBtn;
+    ui::PinkButton m_posResumeBtn;
+    ui::PinkDropdown m_heldDrop;
+    std::vector<std::string> m_heldIds;
+    std::string m_heldMessage;
+
+    // Manager - Categories screen
+    ui::PinkTextBox m_catIdInput, m_catNameInput, m_catAcronymInput;
+    ui::PinkButton m_catAddBtn, m_catBackBtn;
+    std::string m_catMessage;
+    std::vector<Category> m_categoriesCache;
+
+    // Manager - Seasons screen
+    ui::PinkTextBox m_seasonStartInput, m_seasonEndInput, m_seasonPctInput;
+    ui::PinkButton m_seasonAddBtn, m_seasonToggleBtn, m_seasonBackBtn;
+    std::string m_seasonMessage;
+    int m_seasonSelectedIdx{-1};
+    std::vector<Season> m_seasonsCache;
+
+    // Manager - Inventory screen
+    ui::PinkTextBox m_invSearchInput, m_invQtyInput;
+    ui::PinkButton m_invSetBtn, m_invBackBtn;
+    std::string m_invMessage;
+    int m_invSelectedIdx{-1};
+
+    // Manager - Product edit screen
+    ui::PinkTextBox m_peIdInput, m_peNameInput, m_peAcronymInput,
+        m_pePriceInput, m_peTaxInput, m_peDiscountInput, m_peQtyInput;
+    ui::PinkDropdown m_peUnitDrop, m_peCategoryDrop;
+    ui::PinkButton m_peSaveBtn, m_peBackBtn, m_peBarcodeBtn;
+    std::string m_peMessage;
+    std::string m_peGeneratedBarcode;
+
+    // Manager - Reports screen
+    ui::PinkDropdown m_reportDrop;
+    ui::PinkTextBox m_reportFromInput, m_reportToInput;
+    ui::PinkButton m_reportRunBtn, m_reportBackBtn;
+    ui::PinkButton m_reportPrevBtn, m_reportNextBtn;
+    ReportService::Table m_reportTable;
+    int m_reportScroll{0};
+    std::string m_reportMessage;
+
+    // Cashier - Held Orders screen
+    ui::PinkButton m_heldResumeBtn, m_heldDeleteBtn, m_heldBackBtn;
+    ui::PinkButton m_heldPrevBtn, m_heldNextBtn;
+    std::string m_heldScreenMessage;
+    int m_heldScroll{0};
+    std::vector<Order> m_heldCache;
+
+    // Cashier/Manager - Order Edit screen (edit a paid order within 7 days)
+    ui::PinkTextBox m_oeOrderIdInput, m_oeCustomerInput, m_oeContactInput;
+    ui::PinkButton m_oeLoadBtn, m_oeApproveBtn, m_oeSaveBtn, m_oeBackBtn;
+    std::string m_oeMessage;
+    bool m_oeManagerApproved{false};
+    std::vector<std::pair<Product, int>> m_oeLines;
+
+    // Bill Print screen (or overlay)
+    ui::PinkButton m_printPdfBtn, m_printCloseBtn;
+    std::string m_printMessage;
+
+    // Responsive layout
     float m_w{1000.0f};
     float m_h{680.0f};
-    float m_renderScale{1.0f};  // layout units -> window pixels
+    float m_renderScale{1.0f};
+
+    // ---- POS actions (existing + new) ----
     void refreshProducts();
     void posDescribe();
     void posAdd();
-    bool posAddOne(const std::string& barcode);  // scan flows: the scan IS the add (qty 1)
-    void addDecodedToOrder();  // Camera/File screens: decoded product -> cart + POS screen
+    bool posAddOne(const std::string& barcode);
+    void addDecodedToOrder();
     void posCheckout();
     void posNewOrder();
+    void posHold();
+    void posResume();
+    void posPrintPdf();
     void drawBillOverlay();
     void drawDescriptionCard(const sf::FloatRect& card);
     void drawPosCameraCard(const sf::FloatRect& card);
     void applyView();
     void toggleFullscreen();
 
-    // ---- v3 "alive" layer: particles, mascot, transitions, animations ----
-    struct Particle { sf::Vector2f pos, vel; float size, phase, life, maxLife; int kind; };
-    std::vector<Particle> m_ambient;   // slow floating hearts / sparkles
-    std::vector<Particle> m_trail;     // sparkles that follow the mouse
-    std::vector<Particle> m_burst;     // celebration explosion on success
-    float m_elapsed{0.0f};
-    float m_transition{1.0f};          // legacy (kept for screenshot mode)
-    sf::RenderTexture m_contentTexture;
-    // Closable sidebar: rendered to its own texture and slid away;
-    // the content then centres itself on the single screen.
-    sf::RenderTexture m_sidebarTexture;
-    sf::RenderTarget* m_sidebarRt{nullptr};
-    sf::RenderTarget& sidebarRt() { return *m_sidebarRt; }
-    bool m_sidebarOpen{true};
-    float m_sidebarClosed{0.0f};       // 0 = open, 1 = closed (animated)
-    sf::FloatRect sidebarToggleRect() const;
-    void drawSidebarToggle();
-    sf::Vector2f contentMouse() const
-    {
-        return {m_mouse.x + 110.0f * m_sidebarClosed, m_mouse.y};
-    }
-    sf::RenderTarget* m_rt{nullptr};
-    sf::RenderTarget& rt() { return *m_rt; }
-    float m_shake{0.0f};               // invalid-input shake timer
-    std::array<float, 6> m_tilePop{};  // per-digit pop animation
-    std::size_t m_prevCodeLen{0};
-    float m_testRunTime{99.0f};        // time since self-test ran (stagger)
-    float m_mascotHappy{0.0f};         // >0 while mascot celebrates
-    std::string m_mascotText{"Let's create a\nbarcode!"};
-    sf::Vector2f m_mouse{0.0f, 0.0f};
-    void initParticles();
-    void updateParticles(float dt);
-    void drawParticles();
-    void drawBursts();
-    void spawnBurst(const sf::Vector2f& centre, int count = 26);
-    void celebrate(const std::string& bubble, const sf::Vector2f& burstAt);
-    void drawMascot();
-    void switchView(View next);
-    void drawDigitTiles(float shakeX);
+    // ---- Manager actions ----
+    void refreshCategories();
+    void categoryAdd();
+    void refreshSeasons();
+    void seasonAdd();
+    void seasonToggle();
+    void refreshInventory();
+    void inventorySet();
+    void productEditLoad();
+    void productEditSave();
+    void productEditGenerateBarcode();
+    void runReport();
+    void drawReportTable(const sf::FloatRect& card);
 
-    bool anyTextFocused() const;
-    void handleEvents();
-    void handleEnterKey();
-    void update(float deltaSeconds);
-    void draw();
+    // ---- Cashier actions (held orders) ----
+    void refreshHeldOrders();
+    void heldResumeSelected();
+    void heldDeleteSelected();
+
+    // ---- Manager/cashier actions (order edit) ----
+    void orderEditLoad();
+    void orderEditApprove();
+    void orderEditSave();
+
+    // ---- Draw methods (existing) ----
     void drawSidebar();
     void drawGenerator();
     void drawFileScanner();
@@ -197,6 +271,20 @@ private:
     void drawPosOrder();
     void drawProducts();
     void drawSelfTest();
+
+    // ---- Draw methods (new) ----
+    void drawCategories();
+    void drawSeasons();
+    void drawInventory();
+    void drawProductEdit();
+    void drawReports();
+    void drawHeldOrders();
+    void drawOrderEdit();
+    void drawBillPrint();
+    void drawRoleButton();
+    void drawManagerPill(const sf::FloatRect& bounds, const std::string& text, bool ok);
+
+    // ---- Shared ----
     void drawPreview(const sf::FloatRect& bounds, const sf::Texture& texture, bool has);
     void setPreviewFromImage(const Image& image);
     void generateBarcode();
@@ -216,4 +304,48 @@ private:
     void onBarcodeScanned(const std::string& code);
     void resetScan();
     void resetScanState();
+
+    // ---- v3 "alive" layer (unchanged) ----
+    struct Particle { sf::Vector2f pos, vel; float size, phase, life, maxLife; int kind; };
+    std::vector<Particle> m_ambient;
+    std::vector<Particle> m_trail;
+    std::vector<Particle> m_burst;
+    float m_elapsed{0.0f};
+    float m_transition{1.0f};
+    sf::RenderTexture m_contentTexture;
+    sf::RenderTexture m_sidebarTexture;
+    sf::RenderTarget* m_sidebarRt{nullptr};
+    sf::RenderTarget& sidebarRt() { return *m_sidebarRt; }
+    bool m_sidebarOpen{true};
+    float m_sidebarClosed{0.0f};
+    sf::FloatRect sidebarToggleRect() const;
+    void drawSidebarToggle();
+    sf::Vector2f contentMouse() const
+    {
+        return {m_mouse.x + 110.0f * m_sidebarClosed, m_mouse.y};
+    }
+    sf::RenderTarget* m_rt{nullptr};
+    sf::RenderTarget& rt() { return *m_rt; }
+    float m_shake{0.0f};
+    std::array<float, 6> m_tilePop{};
+    std::size_t m_prevCodeLen{0};
+    float m_testRunTime{99.0f};
+    float m_mascotHappy{0.0f};
+    std::string m_mascotText{"Let's create a\nbarcode!"};
+    sf::Vector2f m_mouse{0.0f, 0.0f};
+    void initParticles();
+    void updateParticles(float dt);
+    void drawParticles();
+    void drawBursts();
+    void spawnBurst(const sf::Vector2f& centre, int count = 26);
+    void celebrate(const std::string& bubble, const sf::Vector2f& burstAt);
+    void drawMascot();
+    void switchView(View next);
+    void drawDigitTiles(float shakeX);
+
+    bool anyTextFocused() const;
+    void handleEvents();
+    void handleEnterKey();
+    void update(float deltaSeconds);
+    void draw();
 };

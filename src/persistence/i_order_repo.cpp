@@ -23,3 +23,37 @@ bool OrderDetailFileRepository::append(const OrderDetail& detail)
 {
     return RecordFile::appendLine(m_path, OrderDetailSerialiser::format(detail));
 }
+
+std::vector<Order> OrderFileRepository::loadAll()
+{
+    std::vector<Order> orders;
+    for (const std::string& line : RecordFile::readAllLines(m_path))
+        if (auto o = OrderSerialiser::parse(line)) orders.push_back(*o);
+    return orders;
+}
+bool OrderFileRepository::saveAll(const std::vector<Order>& orders)
+{
+    std::vector<std::string> lines;
+    for (const Order& o : orders) lines.push_back(OrderSerialiser::format(o));
+    return RecordFile::writeAllLines(m_path, lines);
+}
+std::vector<OrderDetail> OrderDetailFileRepository::loadAll()
+{
+    std::vector<OrderDetail> details;
+    for (const std::string& line : RecordFile::readAllLines(m_path))
+        if (auto d = OrderDetailSerialiser::parse(line)) details.push_back(*d);
+    return details;
+}
+std::vector<OrderDetail> OrderDetailFileRepository::loadForOrder(const std::string& orderId)
+{
+    std::vector<OrderDetail> out;
+    for (const OrderDetail& d : loadAll())
+        if (d.orderId == orderId) out.push_back(d);
+    return out;
+}
+bool OrderDetailFileRepository::saveAll(const std::vector<OrderDetail>& details)
+{
+    std::vector<std::string> lines;
+    for (const OrderDetail& d : details) lines.push_back(OrderDetailSerialiser::format(d));
+    return RecordFile::writeAllLines(m_path, lines);
+}

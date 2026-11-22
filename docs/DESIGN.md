@@ -1,4 +1,4 @@
-# Design Notes — Chili Mili Barcode POS (Phase 1 + Phase 2)
+# Design Notes — Chili Mili Barcode POS (Phases 1 + 2 + 3)
 
 Group: **Chili Mili**
 
@@ -260,3 +260,63 @@ remove the repeated work:
   between them no longer stops the camera (only the scan state is
   reset), so there is no Start Cam press in the middle of the flow.
   Leaving for any other screen still stops the camera.
+
+## Phase 3 — PoS v2: categories, seasons, bill split, roles, reports
+
+Phase 3 keeps the Phase 2 architecture (domain / persistence /
+services / ui) and extends it; nothing from Phases 1-2 was rewritten.
+
+- **Categories.** `Data/PCategory.txt` holds one category per line
+  (Category Id, Name, Acronym, ending `#`). The Category Id is stored
+  in `Product.txt` as the LAST field of each product line, and the
+  first two digits of every product barcode ARE the category:
+  `CategoryService::makeBarcode` builds a barcode as category id +
+  zero-padded product id (1001 in category 11 -> `111001`). Existing
+  products were migrated to category-prefixed barcodes by hand, so a
+  migrated barcode's last four digits need not equal the product id;
+  only the two-digit prefix is contractual. Editing a product keeps
+  its existing barcode unless its category changes (the barcode is
+  printed on shelf labels and named by the barcodeFile column).
+- **Bill split (requirements 8 + 9).** `Bill.txt` now holds ONE line
+  per bill with bill-level money: total without tax, total tax, total
+  product discount, total payable, amount received, balance returned,
+  payment status (mirrors the order's status), seasonal discount,
+  special discount, date, time. The per-product lines moved to
+  `Data/BillDetail.txt` (Bill Id, acronym, unit price without tax,
+  quantity, line discount = per-unit discount x quantity). Discounts
+  are stored as rupee AMOUNTS in Bill.txt; the special discount is
+  entered as a percentage at checkout and capped at 8%. The payable
+  formula lives in `BillService::buildBill`:
+  withoutTax + tax - productDiscount - seasonal - special.
+- **Seasons.** `Data/Seasons.txt` lines are: start date, end date,
+  discount percentage, isActive (`true`/`false`), ending `#`. On
+  checkout, `SeasonsService::activeDiscountPercentOn` finds the
+  active season covering today's date and the percentage is applied
+  to (withoutTax + tax - productDiscount); the resulting amount is
+  stored in the bill's seasonal discount field.
+- **Hold / resume.** Holding an order writes the order (status
+  `on-hold`) and its detail rows only - no bill, no stock movement.
+  Stock moves once, at checkout, when the resumed (or fresh) order is
+  billed. Resuming reloads the order's lines into the POS cart by
+  product barcode.
+- **Editing a paid order.** The gate is `OrderService::editPaidOrder`:
+  the order must be paid, within 7 days of its order date, and a
+  manager must have approved (the Manager Approve button only works
+  in Manager role). `saveEditedPaidOrder` then rewrites the order
+  row, replaces its detail rows, and re-issues its bill IN PLACE -
+  same Bill Id, since Bill Ids cannot repeat - recomputing totals
+  (special discount resets to 0; the current season, if any, is
+  re-applied) and reconciling stock: old quantities are returned to
+  the shelf first, then the new quantities are deducted.
+- **Roles.** `UserRole` (Cashier / Manager) is a GUI-level switch.
+  Cashier sees the selling screens; the manager screens (Categories,
+  Seasons, Inventory, Product Edit, Reports, Order Edit approval)
+  belong to the Manager role.
+- **Reports.** `ReportService` builds the six manager tables from the
+  repositories. "Cash sales" joins bills to their orders and keeps
+  only payment mode `cash`; the weekly window is today plus the
+  previous 6 days. Top-10 sold joins BillDetail quantities to the
+  products' remaining stock.
+- **PDF bills.** `services/pdf_bill` writes a minimal, valid PDF by
+  hand (no external library), one page per bill, saved as
+  `bills/<Bill Id>.pdf` next to the executable.

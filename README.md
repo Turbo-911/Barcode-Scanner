@@ -1,5 +1,5 @@
 # Barcode-Scanner
-A desktop application written in C++ for a small store: it converts a six-digit number into a barcode image, reads a barcode back into its six-digit number (from an image file or a camera), and runs a point of sale on top of that barcode core — products, stock, orders and bills. The Phase 1 core is built without third-party libraries; the Phase 2 GUI uses SFML 3.
+A desktop application written in C++ for a small store: it converts a six-digit number into a barcode image, reads a barcode back into its six-digit number (from an image file or a camera), and runs a point of sale on top of that barcode core — products, stock, orders and bills. The Phase 1 core is built without third-party libraries; the Phase 2 GUI uses SFML 3. Phase 3 grows the POS into PoS v2: product categories, seasonal and special discounts, a split bill format, cashier/manager roles and manager reports.
 
 ## Features
 
@@ -17,6 +17,17 @@ A desktop application written in C++ for a small store: it converts a six-digit 
 - **Scan-to-order:** scanning a product with the POS camera adds it to the current order automatically — scanning it again adds one more.
 - **Stock rule:** a product is added only when the required quantity is within the available stock.
 - **Checkout and billing:** the bill is calculated, shown on screen, written to the data files, and stock is reduced.
+
+### Phase 3 — PoS v2
+
+- **Product categories:** the manager configures categories in `Data/PCategory.txt`; every product carries a Category Id, and the first two digits of its barcode are the category.
+- **Order editing:** orders can be held and resumed with minimum clicks; a paid order can be edited within 7 days of payment, only after manager approval.
+- **Inventory:** the manager can view and update stock at any time, and add or edit any product.
+- **Split bill format:** `Data/bill.txt` holds one line per bill (totals, amount received, balance returned, seasonal and special discounts); the per-product lines live in `Data/BillDetail.txt`.
+- **Discounts:** seasonal discounts from manager-configured seasons in `Data/Seasons.txt` apply automatically at billing; a special discount of up to 8% can be given at checkout.
+- **PDF bills:** a bill can be printed as a PDF by the cashier or the manager.
+- **Roles:** cashier and manager features are provided separately through the UI.
+- **Manager reports:** incomplete and completed orders with totals, cash sales (daily / weekly / monthly / yearly / custom period), all sales with discounts, top 10 most sold items and top 10 items by remaining stock.
 
 ## How It Works
 
@@ -73,11 +84,14 @@ The full barcode layout is:
 Barcode-Scanner/
 ├── run_gui.bat           ONE command: builds everything and launches the GUI
 ├── CMakeLists.txt        Optional CMake build (same sources)
-├── Data/                 Phase 2 data files (repository names)
-│   ├── product.txt       Products: id barcode acronym name unit price tax discount qty barcodeFile #
+├── Data/                 Phase 2 + 3 data files (repository names)
+│   ├── product.txt       Products: id barcode acronym name unit price tax discount qty barcodeFile categoryId #
+│   ├── PCategory.txt     Categories: categoryId name acronym #
 │   ├── order.txt         Orders: orderId date time customer contact status amount mode merchant #
 │   ├── orderDetail.txt   Order lines: orderId productId productBarcode quantity #
-│   └── bill.txt          Bill rows (one per product): billId customer orderId acronym price discount qty totals status #
+│   ├── bill.txt          One line per bill: billId customer orderId totals payable received balance status seasonal special date time #
+│   ├── BillDetail.txt    Bill lines: billId acronym unitPrice quantity lineDiscount #
+│   └── Seasons.txt       Seasons: startDate endDate discountPercent isActive #
 ├── assets/fonts/         Fonts bundled for the GUI
 ├── barcodes/             Sample barcode images
 ├── src/
@@ -87,13 +101,15 @@ Barcode-Scanner/
 │   ├── camera/           Webcam capture (Media Foundation) + frame-source interface
 │   ├── common/           common.h (shared types), BMP codec, image helpers, image_io,
 │   │                     string_utils (file text rules), date_time (the only clock reader)
-│   ├── domain/           Pure data: product.h, order.h (Order + OrderDetail), bill.h,
-│   │                     enums (order statuses / payment modes)
+│   ├── domain/           Pure data: product.h, order.h (Order + OrderDetail), bill.h
+│   │                     (Bill + BillDetail), enums (statuses / payment modes / roles)
 │   ├── persistence/      record_file (only raw file IO), one serialiser per data file,
-│   │                     repository interfaces + file repositories (i_product_repo,
-│   │                     i_order_repo, i_bill_repo)
+│   │                     repository interfaces + file repositories (products, orders,
+│   │                     bills, bill details, categories, seasons)
 │   ├── services/         id_generator, bill_calculator (money maths), bill_service,
-│   │                     product_service (incl. THE stock rule), order_service, scan_service
+│   │                     product_service (incl. THE stock rule), order_service,
+│   │                     category_service, seasons_service, report_service,
+│   │                     pdf_bill (hand-written PDF writer), scan_service
 │   └── ui/               SFML GUI: BarcodeStudioGui, Widgets, Theme (presentation only)
 ├── tests/                Test barcode images, pos_selftest.cpp, seed_history.cpp
 └── docs/DESIGN.md        Architecture, SE principles, format decisions
@@ -126,6 +142,32 @@ On top of the Phase 1 barcode core, the GUI is a small store POS:
   refreshed from `Data/product.txt`.
 - The design follows SRP / OCP throughout — see `docs/DESIGN.md`.
 
+## Phase 3 — PoS v2
+
+- **Categories first:** the manager creates categories on the
+  Categories screen; adding a product then picks a category, and its
+  barcode is generated with the category as the first two digits.
+- **Hold and resume:** an order can be held from the POS screen with
+  one button and resumed later from the Held Orders screen; stock
+  moves only when the order is finally billed.
+- **Editing a paid order:** on the Order Edit screen the manager
+  approves, the cashier adjusts the customer details and line
+  quantities, and saving rewrites the order and re-issues its bill
+  in place (same Bill Id), reconciling stock. Only paid orders, only
+  within 7 days of payment.
+- **Seasons and discounts:** the manager defines seasons (date range
+  + discount %) and activates or deactivates them; at checkout an
+  active season's discount is applied automatically, and a special
+  discount of up to 8% can be added on top. Both amounts are recorded
+  on the bill.
+- **Amount received / balance:** checkout records what the customer
+  handed over and the balance returned.
+- **Reports:** the Reports screen runs the six manager reports in
+  tabular form, including cash sales for a chosen period and the two
+  top-10 lists.
+- **Print Bill:** the bill screen can save the bill as a PDF
+  (`bills/<Bill Id>.pdf`).
+
 ## Running
 
 ```text
@@ -139,7 +181,11 @@ launches the GUI. Other modes: `barcode_studio_gui.exe --console`
 ## Usage
 
 The GUI has screens for the barcode generator, the file scanner,
-the camera scanner, POS orders, the product list and the self-test.
+the camera scanner, POS orders, the product list and the self-test,
+plus the Phase 3 screens: categories, seasons, inventory, product
+edit, reports, held orders, order edit and bill print. A role button
+switches between Cashier and Manager; the manager screens belong to
+the Manager role.
 
 The console program (`--console`) shows a menu:
 
@@ -161,9 +207,12 @@ The console program (`--console`) shows a menu:
 - `barcode_studio_gui.exe --selftest` — headless encode/decode
   round-trip check over a set of sample numbers.
 - `tests/pos_selftest.cpp` — headless checks of the POS services:
-  the stock rule, bill calculation and checkout file writes.
+  the stock rule, bill calculation, checkout file writes, and the
+  Phase 3 flows (categories, seasonal discount, the 8% special cap,
+  hold/resume, paid-order edit, reports, PDF output).
 - The images in `tests/` cover normal, blurry, rotated, noisy,
-  inverted and different-size barcodes.
+  inverted and different-size barcodes, plus one barcode image per
+  product in the catalogue.
 
 ## Roles For Phase 1
 
@@ -181,6 +230,8 @@ The console program (`--console`) shows a menu:
 - Image files must be BMP.
 - Heavily blurred, rotated, or low-contrast images may not decode.
 - Camera support depends on the Windows camera APIs available on the machine.
+- Order and Bill Ids are time-based (HHMMSS + day), so two checkouts
+  within the same second would generate the same id.
 
 ## License
 

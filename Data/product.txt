@@ -1,16 +1,16 @@
-1001 123456 MILK500 Fresh_Milk count 180.00 10.00 0.00 26 tests/barcode_123456.bmp #
-1002 987654 BREAD Branded_Bread count 120.00 5.00 10.00 25 tests/barcode_987654.bmp #
-1003 100000 EGGS12 Farm_Eggs_Dozen count 320.00 15.00 0.00 30 tests/barcode_100000.bmp #
-1004 200001 RICE5KG Basmati_Rice weight 1450.00 50.00 100.00 12 tests/barcode_200001.bmp #
-1005 555555 SUGAR1KG White_Sugar weight 210.00 8.00 5.00 40 tests/barcode_555555.bmp #
-1006 999999 TEA250 Lipton_Tea count 450.00 25.00 20.00 20 tests/barcode_999999.bmp #
-1007 112233 OIL1L Cooking_Oil count 560.00 30.00 0.00 8 tests/barcode_112233.bmp #
-1008 246810 BISC Biscuit_Pack count 80.00 4.00 5.00 60 tests/barcode_246810.bmp #
-1009 334455 PASTA Pasta_Pack count 95.00 4.00 0.00 43 tests/barcode_334455.bmp #
-1010 445566 SALT Salt_Pack count 60.00 2.00 0.00 80 tests/barcode_445566.bmp #
-1011 556677 COFFEE Coffee_Jar count 850.00 40.00 50.00 15 tests/barcode_556677.bmp #
-1012 667788 JAM250 Fruit_Jam count 380.00 18.00 10.00 22 tests/barcode_667788.bmp #
-1013 778899 SOAP Bath_Soap count 150.00 6.00 0.00 3 tests/barcode_778899.bmp #
-1014 889900 SHAMP Shampoo_Bottle count 620.00 28.00 30.00 14 tests/barcode_889900.bmp #
-1015 990011 DETRG Detergent_Pack weight 720.00 32.00 0.00 9 tests/barcode_990011.bmp #
-1016 121212 CHOCO Chocolate_Bar count 120.00 5.00 15.00 0 tests/barcode_121212.bmp #
+1001 111001 MILK500 Fresh_Milk count 180.00 10.00 0.00 26 tests/barcode_111001.bmp 11 #
+1002 129876 BREAD Branded_Bread count 120.00 5.00 10.00 25 tests/barcode_129876.bmp 12 #
+1003 131000 EGGS12 Farm_Eggs_Dozen count 320.00 15.00 0.00 30 tests/barcode_131000.bmp 13 #
+1004 132000 RICE5KG Basmati_Rice weight 1450.00 50.00 100.00 12 tests/barcode_132000.bmp 13 #
+1005 145555 SUGAR1KG White_Sugar weight 210.00 8.00 5.00 40 tests/barcode_145555.bmp 14 #
+1006 159999 TEA250 Lipton_Tea count 450.00 25.00 20.00 20 tests/barcode_159999.bmp 15 #
+1007 161122 OIL1L Cooking_Oil count 560.00 30.00 0.00 8 tests/barcode_161122.bmp 16 #
+1008 172468 BISC Biscuit_Pack count 80.00 4.00 5.00 60 tests/barcode_172468.bmp 17 #
+1009 133344 PASTA Pasta_Pack count 95.00 4.00 0.00 43 tests/barcode_133344.bmp 13 #
+1010 143344 SALT Salt_Pack count 60.00 2.00 0.00 80 tests/barcode_143344.bmp 14 #
+1011 156677 COFFEE Coffee_Jar count 850.00 40.00 50.00 15 tests/barcode_156677.bmp 15 #
+1012 176677 JAM250 Fruit_Jam count 380.00 18.00 10.00 22 tests/barcode_176677.bmp 17 #
+1013 187788 SOAP Bath_Soap count 150.00 6.00 0.00 3 tests/barcode_187788.bmp 18 #
+1014 188899 SHAMP Shampoo_Bottle count 620.00 28.00 30.00 14 tests/barcode_188899.bmp 18 #
+1015 189900 DETRG Detergent_Pack weight 720.00 32.00 0.00 9 tests/barcode_189900.bmp 18 #
+1016 171016 CHOCO Chocolate_Bar count 120.00 5.00 15.00 0 tests/barcode_171016.bmp 17 #

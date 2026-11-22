@@ -55,9 +55,12 @@ if exist "C:\msys64\ucrt64\bin\mingw32-make.exe" (
         src\domain\enums.cpp ^
         src\persistence\record_file.cpp src\persistence\product_serialiser.cpp src\persistence\order_serialiser.cpp ^
         src\persistence\order_detail_serialiser.cpp src\persistence\bill_serialiser.cpp ^
+        src\persistence\bill_detail_serialiser.cpp src\persistence\category_serialiser.cpp src\persistence\seasons_serialiser.cpp ^
         src\persistence\i_product_repo.cpp src\persistence\i_order_repo.cpp src\persistence\i_bill_repo.cpp ^
+        src\persistence\i_bill_detail_repo.cpp src\persistence\i_category_repo.cpp src\persistence\i_seasons_repo.cpp ^
         src\services\id_generator.cpp src\services\bill_calculator.cpp src\services\bill_service.cpp ^
         src\services\product_services.cpp src\services\order_service.cpp src\services\scan_service.cpp ^
+        src\services\category_service.cpp src\services\seasons_service.cpp src\services\report_service.cpp src\services\pdf_bill.cpp ^
         src\ui\BarcodeStudioGui.cpp src\ui\Widgets.cpp ^
         -o barcode_studio_gui.exe ^
         -lsfml-graphics -lsfml-window -lsfml-system ^

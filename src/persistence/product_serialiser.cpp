@@ -10,7 +10,7 @@ std::optional<Product> ProductSerialiser::parse(const std::string& line)
     std::string marker;
     if (!(iss >> p.id >> p.barcode >> p.acronym >> p.name >> p.unit
              >> p.unitPrice >> p.taxPerUnit >> p.discountPerUnit
-             >> p.availableQuantity >> p.barcodeFile >> marker))
+             >> p.availableQuantity >> p.barcodeFile >> p.categoryId >> marker))
         return std::nullopt;
     if (marker != "#") return std::nullopt;
     p.name = stringutils::decode(p.name);
@@ -25,6 +25,7 @@ std::string ProductSerialiser::format(const Product& p)
         << stringutils::money(p.unitPrice) << ' '
         << stringutils::money(p.taxPerUnit) << ' '
         << stringutils::money(p.discountPerUnit) << ' '
-        << p.availableQuantity << ' ' << p.barcodeFile << " #";
+        << p.availableQuantity << ' ' << p.barcodeFile << ' '
+        << p.categoryId << " #";
     return oss.str();
 }
