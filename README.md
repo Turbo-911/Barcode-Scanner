@@ -1,12 +1,22 @@
 # Barcode-Scanner
-A desktop application written in C++ that converts a six-digit number into a barcode image and reads a barcode back into its six-digit number, from either an image file or a camera. The Phase 1 core is built without third-party libraries; the Phase 2 GUI uses SFML 3.
+A desktop application written in C++ for a small store: it converts a six-digit number into a barcode image, reads a barcode back into its six-digit number (from an image file or a camera), and runs a point of sale on top of that barcode core — products, stock, orders and bills. The Phase 1 core is built without third-party libraries; the Phase 2 GUI uses SFML 3.
 
 ## Features
+
+### Phase 1 — Barcode core
 
 - **Number to barcode:** enter a six-digit number and get a barcode image, previewed in the console and saved as a BMP file.
 - **Barcode to number:** decode a barcode from a BMP image file.
 - **Camera scanning:** capture frames from a webcam and decode the first barcode found.
 - **Self-test:** an encode-then-decode round trip that checks the whole pipeline without needing files or a camera.
+
+### Phase 2 — Point of Sale
+
+- **Product catalogue:** products with price, tax, discount and live stock, stored in `Data/product.txt`.
+- **Product description:** scan a product's barcode (camera or file) or type it to see its full specification; an unknown barcode gives a clear "no product found" message.
+- **Scan-to-order:** scanning a product with the POS camera adds it to the current order automatically — scanning it again adds one more.
+- **Stock rule:** a product is added only when the required quantity is within the available stock.
+- **Checkout and billing:** the bill is calculated, shown on screen, written to the data files, and stock is reduced.
 
 ## How It Works
 
@@ -93,15 +103,27 @@ Barcode-Scanner/
 
 On top of the Phase 1 barcode core, the GUI is a small store POS:
 
-- **Products** are kept in `Data/product.txt`; scanning a product's
-  barcode (camera or file) or pressing **Description** in the POS
-  screen shows its full specification.
-- **POS Order screen:** scan or type barcodes, set quantities — a
-  product is added only when the required quantity is within the
-  available stock (the stock rule lives in
-  `ProductService::canSell`). **Generate Bill** writes the order to
-  `Data/order.txt`, its lines to `Data/orderDetail.txt` and the bill
-  to `Data/bill.txt`, shows the bill on screen, and reduces stock.
+- **Products** are kept in `Data/product.txt`. Scanning a product's
+  barcode (camera or file), typing it, or pressing **Description** in
+  the POS screen shows its full specification; a barcode with no
+  matching product shows a clear "no product found" message.
+- **POS Order screen:** scanning a product with the POS camera adds it
+  to the order automatically (one unit per scan — scanning again adds
+  another, merged into the same line), and a decoded barcode on the
+  Camera or File scanner screens can also be sent straight into the
+  current order. Quantities can be set by hand as well — a product is
+  added only when the required quantity is within the available stock
+  (the stock rule lives in `ProductService::canSell`).
+- **Customer and payment:** the customer's name and contact number
+  (exactly 11 digits) are recorded with the order, and the payment
+  mode, order status and merchant are picked from drop-down menus —
+  the merchant list follows the payment mode (banks for card,
+  JazzCash / EasyPaisa / Raast for wallet).
+- **Generate Bill** writes the order to `Data/order.txt`, its lines to
+  `Data/orderDetail.txt` and the bill to `Data/bill.txt`, shows the
+  bill on screen, and reduces stock.
+- **Products screen:** the full product list with quantities in stock,
+  refreshed from `Data/product.txt`.
 - The design follows SRP / OCP throughout — see `docs/DESIGN.md`.
 
 ## Running
@@ -116,7 +138,10 @@ launches the GUI. Other modes: `barcode_studio_gui.exe --console`
 
 ## Usage
 
-The program shows a menu:
+The GUI has screens for the barcode generator, the file scanner,
+the camera scanner, POS orders, the product list and the self-test.
+
+The console program (`--console`) shows a menu:
 
 ```text
  1. Generate barcode from 6-digit number
@@ -130,6 +155,15 @@ The program shows a menu:
 - **Option 2:** enter the path to a BMP image. Paths wrapped in quotes (as when dragging a file into the console) are accepted.
 - **Option 3:** hold a barcode in front of the camera. The program tries up to 30 frames. If none decode, the last frame is saved as `last_capture.bmp` for debugging.
 - **Option 4:** runs a set of sample numbers through encode and decode and prints PASS or FAIL for each.
+
+## Testing
+
+- `barcode_studio_gui.exe --selftest` — headless encode/decode
+  round-trip check over a set of sample numbers.
+- `tests/pos_selftest.cpp` — headless checks of the POS services:
+  the stock rule, bill calculation and checkout file writes.
+- The images in `tests/` cover normal, blurry, rotated, noisy,
+  inverted and different-size barcodes.
 
 ## Roles For Phase 1
 
@@ -149,5 +183,10 @@ The program shows a menu:
 - Camera support depends on the Windows camera APIs available on the machine.
 
 ## License
+
+Copyright (c) 2026 Chili Mili (Zainab, Aliza, Nabeera, Arooj and Talha).
+All rights reserved — see the [LICENSE](LICENSE) file. This project
+may not be used, copied, modified, or distributed without the prior
+written permission of the authors.
 
 Developed as a university course project.
