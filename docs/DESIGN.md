@@ -320,3 +320,234 @@ services / ui) and extends it; nothing from Phases 1-2 was rewritten.
 - **PDF bills.** `services/pdf_bill` writes a minimal, valid PDF by
   hand (no external library), one page per bill, saved as
   `bills/<Bill Id>.pdf` next to the executable.
+
+## Fewer presses (v21)
+
+A usability pass over the Phase 3 screens, GUI layer only - no
+service, persistence or format changed:
+
+- **Enter confirms.** One dispatch point (`onEnterKey`) maps Enter in
+  a focused text box to the screen's main action - the same function
+  the button calls, so keyboard and mouse can never disagree (DRY):
+  barcode/qty -> Add to Order, amount received -> Generate Bill,
+  generator code -> Generate, file path -> Decode, and the id/date
+  boxes on the manager screens -> Load / Add / Run.
+- **Bill close starts the next order.** The bill overlay's Close now
+  calls `posNewOrder()` instead of re-implementing half of it:
+  one click leaves a clean, focused POS ready for the next customer.
+- **Reports run on selection.** Picking a report from the drop-down
+  runs it immediately; the Run button remains for re-running with
+  custom dates.
+- **Seasons toggle in one click.** Clicking a season's Active column
+  toggles it (previously: click row, then click Toggle Active).
+- **Entering POS focuses the barcode box** (`switchView`), so
+  scanning/typing works immediately on arrival.
+- Two row hit-areas that had drifted from their drawings were
+  re-aligned (Seasons rows are drawn at y=368 step 40, Held Orders
+  at y=168): previously a click selected the neighbouring row.
+
+## Full-project fix pass (v22)
+
+A screen-by-screen audit of every view (draw code vs click code vs
+rendered screenshots) found and fixed:
+
+- **POS customer section was invisible.** `drawPosOrder` positioned
+  the customer/contact boxes and the mode/status/merchant drop-downs
+  but never drew them (only the drop-down *lists* were drawn). The
+  cashier was asked for a customer name that could not be typed.
+  The section now draws as a proper card with labels.
+- **Special % and Amount Received could not be typed into** - their
+  `handleClick` was never called, so they could never take focus.
+- **Totals card overflowed** the 680-unit layout height (584 + 116 =
+  700) and was clipped at the window bottom; the right column was
+  re-stacked to fit.
+- **Inventory row clicks were offset** (tested at y=200, drawn at
+  y=284) - the third screen with this defect after Seasons and Held
+  Orders; all row hit-areas are now aligned with their drawings.
+- Hold/Resume buttons straddled the cart card border (card shortened);
+  Categories list ran past the screen (capped at 8 rows, compressed);
+  the Product Edit overflow note overlapped the last row; the Order
+  Edit approval pill overlapped the Approve button and its field
+  label struck through the heading; the Bill screen's Close button
+  was painted over by its own card in the empty state.
+- Order Edit's save armed the POS bill overlay (`m_showBill`), which
+  would have popped up stale on the POS screen; removed.
+- Money and percent boxes now accept a decimal point (an opt-in
+  `setAllowDecimal` on the text box widget, one '.' at most).
+- The never-drawn, never-clicked `m_roleBtn` widget was removed
+  (role switching uses the sidebar pill's own hit-rects).
+
+## Enter key consolidation (v23)
+
+A warnings pass (`-Wall -Wextra`) exposed a real bug: the app had
+TWO Enter handlers. The original `handleEnterKey()` fired on the
+KeyPressed event (Generator, File Scanner, Camera, POS, Self-Test),
+and the v21 `onEnterKey()` fired on TextEntered - so on the POS
+screen one Enter press added the scanned item TWICE, and Generate /
+Decode ran twice. There is now exactly one Enter path
+(`onEnterKey`), which keeps the legacy behaviours (invalid code
+shakes with a hint, camera Enter unlocks a locked scan, Self-Test
+Enter re-runs) and the v21 focus-gated POS/manager actions. The old
+handler also added POS items even while typing the customer name;
+Enter is now focus-aware there. Also removed: the unused `pkrShort`
+helper, and a member-initialisation order warning in Product Edit.
+
+## One path per job (v25)
+
+Point 10 taken further, at the user's direction:
+
+- **The sidebar mascot is gone.** Its speech bubble and character
+  were drawn over the lower nav entries; in Manager mode (13
+  entries) Edit Products, Reports and Self-Test were partly covered.
+  The sidebar now shows only navigation.
+- **One camera.** Camera barcode reading existed twice: the Phase 1
+  Camera Scan screen and the POS Start Cam. The sidebar entry for
+  the standalone screen was removed - the POS camera (which adds
+  the scanned item automatically) is the single camera path. The
+  decoder/camera modules are unchanged and shared.
+- **Zero-click description.** Typing a complete 6-digit barcode in
+  the POS shows the product description by itself; the Description
+  button was removed and Add to Order widened in its place. Unknown
+  codes still produce the clear not-found message.
+- **Picking a held order in the POS drop-down resumes it
+  immediately** (the Resume button remains for re-picking the order
+  already shown).
+
+## Modal bill, phantom pill and text clearance (v26)
+
+- **The bill overlay is truly modal now.** While it is open, mouse
+  clicks are answered by its two buttons only - the sidebar toggle,
+  the navigation and the screen behind it ignore clicks, typing is
+  swallowed, and the number-key screen shortcuts are disabled. The
+  toggle and the particle effects are not even drawn while the bill
+  is up: they stay in the back frame behind the dim layer, so the
+  layout can no longer shift under an open bill.
+- **Bill overlay reflowed**: the card is taller (552) and the totals
+  block uses 22-unit rows, so the Status line ends well above the
+  Close / Print buttons - previously the buttons were painted over
+  the Balance and Status rows.
+- **The logo heart now follows the "Chili Mili" title** instead of
+  preceding it (position measured from the rendered title width).
+- **The duplicate role pill is removed.** A second "Cashier /
+  Manager Mode" pill was drawn at the top-left of every screen, but
+  it was rendered into the content texture after that texture had
+  already been presented, so it never actually appeared in the
+  running app - it only polluted QA screenshots and left an
+  invisible clickable strip over the screen headings. The sidebar's
+  Role pill is the single role switch.
+- **Label and card clearance pass** (text was grazing the element
+  below it in several places): Order Edit's form rows moved down so
+  the "Order Id" label is no longer struck through by its input box,
+  Product Edit's first label row no longer touches the "Product"
+  heading, Inventory's eight rows now end inside their card instead
+  of the last row overflowing it, and the Reports controls card is
+  taller so its drop-down no longer merges with the card edge.
+
+## Message placement audit (v27)
+
+A saved-PDF note in the bill overlay landed on top of the Status
+line. The whole project was swept for the same defect class - a
+message or text line sharing its band with another element:
+
+- **Bill overlay**: the print note now sits in the empty space to
+  the right of the Print as PDF button (its width is measured; on a
+  window too narrow for that space it drops to its own clear line
+  under the buttons). The buttons also moved up 12 units, so the
+  Status line, the note and the buttons each own their band.
+- **Inventory**: the stock message was drawn at the search box's
+  own position and would have painted over it; it now has its own
+  strip under the filter card, and the product list shifted down.
+- **Bill Print screen**: with four or more bill lines, the last
+  line's band reached the Subtotal line; the totals block moved
+  down 14 units.
+- **Held Orders**: the message sat flush on its card's bottom
+  border; the card is 8 units taller.
+- **Reports**: the message line moved 4 units clear of the summary
+  line above it.
+
+## Segmented role switch and POS spacing (v28)
+
+Point 12 asks for the cashier and manager features to be provided
+separately through the UI. The separation existed, but the control
+for it was a small pill that was easy to miss. Two changes:
+
+- **Segmented role switch**: the sidebar now carries a two-segment
+  control under the title - CASHIER and MANAGER always visible side
+  by side, the active segment filled with the primary colour and
+  white text. Clicking a segment selects that role (clicking the
+  active one does nothing); switching to Cashier while a manager
+  screen is open still returns to the POS screen. The menu entries
+  moved down (they start at y=146 in both the drawing and the click
+  handling) so the title, the switch and the menu no longer crowd
+  each other.
+- **POS bottom reflow**: the bottom band of the POS screen was
+  congested, and one overlap was real - the held-orders dropdown
+  (x=534, width 180) slid 24 units under the totals card. The entry
+  and description cards are shorter (156), the cart and customer
+  cards moved up, the totals card is taller (96) with wider row
+  spacing and its bottom edge clear of the window edge, the
+  line-count text sits beside the Order Items heading instead of
+  under the dropdown, and the held-orders dropdown is narrower
+  (148) and ends before the right column starts.
+
+## Role slider and mirrored camera preview (v29)
+
+- **Role slider**: the segmented Cashier/Manager control is now a
+  slider - a single thumb that glides between the two ends of the
+  track when the role changes (eased in update(), the same way the
+  sidebar itself slides). Clicking the Cashier half or the Manager
+  half of the track selects that role, as before.
+- **Mirrored camera preview**: the live camera view is flipped
+  horizontally, so it behaves like a mirror - moving right moves
+  the picture right. The flip is display-only (the preview sprite
+  is drawn with a negative x scale); the frames the barcode
+  decoder works on are untouched, so scanning is unchanged.
+
+## Selection highlight, roomier Products, bigger catalog, true resume (v30)
+
+- **Selected rows are unmistakable**: the theme's Active colour was
+  byte-for-byte identical to LightPanel, so a "selected" row looked
+  exactly like an unselected one. Active is now a clearly deeper
+  pink, and every selectable list (Held Orders, Seasons, Inventory,
+  Edit Products) also draws a primary-pink bar at the left edge of
+  the selected row - the same accent the sidebar uses.
+- **Products breathes**: 6 taller rows per page instead of 8 packed
+  ones (row height 48 -> 58, wider gaps, larger sub-line); paging,
+  the mouse wheel and the scrollbar follow the new page size.
+- **Inventory covers the whole catalog**: the list now scrolls
+  (mouse wheel + slim scrollbar, like Products) instead of stopping
+  at the first 8 products. The catalog grows from 16 to 24 products
+  (one new product per category, barcodes generated with the
+  project's encoder and decode-verified).
+- **Resume is complete**: resuming a held order restores its
+  customer name, contact and payment mode/merchant into the POS
+  form, and checking out completes THAT order in place - same
+  Order Id, its row and detail rows replaced, the bill pointing at
+  it - instead of leaving a ghost on-hold order that could be
+  resumed and paid twice.
+
+## Phone format, honest Order Edit approval, product BMPs (v31)
+
+- **Phone numbers**: contact boxes now format as you type - the
+  dash appears by itself after the fourth digit (0300-1234567,
+  11 digits / 12 characters) - and the dashed form is accepted
+  everywhere a number is checked (the held orders in the data
+  already carry dashed numbers; before, resuming one truncated
+  the number to 11 characters and then rejected it). Hold and
+  Order Edit apply the same check as checkout.
+- **Order Edit approval means something**: loading an order no
+  longer needs approval (viewing is not editing), approving
+  requires a loaded order, approval is per-order (a fresh load
+  resets it, a successful save spends it), and Save always acts
+  on the loaded order - not on whatever the id box happens to
+  say. Unmapped save errors can no longer fall through to a
+  false "updated" message.
+- **Product barcode images are written**: saving a product in
+  Add / Edit Products now writes its barcode BMP if the file is
+  missing, so a UI-created product can really be scanned from
+  its file.
+- **Hardening**: a strict shared date validator (real month/day
+  ranges) now guards the report week maths, the 7-day edit gate
+  and the custom report range; src/barcode/encoder.h no longer
+  repeats common.h's default arguments, so it can be included
+  like any other header.

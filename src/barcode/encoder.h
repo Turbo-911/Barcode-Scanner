@@ -5,7 +5,7 @@
 
 bool isValidCode(const string& digits);
 vector<int> encodeToWidths(const string& digits);
-Image renderBarcode(const string& digits, int module = 3, int height = 120);
+Image renderBarcode(const string& digits, int module, int height);  // defaults live in common.h
 
 // ItfBarcodeEncoder - the IBarcodeEncoder implementation for
 // Interleaved 2 of 5. It simply forwards to the free functions above,

@@ -26,7 +26,7 @@
 // ============================================================================
 //  Chili Mili - Barcode POS Studio (Phase 1 + Phase 2).
 //  Same Phase 1 core functions, untouched. Everything new is presentation:
-//  a mascot whose eyes follow your mouse, floating hearts, mouse sparkle
+//  floating hearts, mouse sparkle
 //  trails, celebration bursts, sliding screen transitions, pop-in digit
 //  tiles, an animated barcode reveal and a staggered self-test.
 // ============================================================================
@@ -90,6 +90,15 @@ namespace
         std::filesystem::create_directories("barcodes", ec);
         return "barcodes";
     }
+    // A product's barcodeFile is stored relative to the project root
+    // (the parent of the Data folder that holds product.txt).
+    std::string productBmpPath(const std::string& barcodeFile, const std::string& productFilePath)
+    {
+        const std::filesystem::path dataDir = std::filesystem::path(productFilePath).parent_path();
+        const std::filesystem::path root = dataDir.parent_path();
+        if (root.empty()) return barcodeFile;
+        return (root / barcodeFile).string();
+    }
     // Merchants that make sense per payment mode (POS drop-down).
     std::vector<std::string> merchantOptionsFor(const std::string& mode)
     {
@@ -98,7 +107,6 @@ namespace
         return {"-"};  // cash has no merchant
     }
     std::string pkr(double v) { return "PKR " + stringutils::money(v); }
-    std::string pkrShort(double v) { return "PKR " + stringutils::money(v); }
     std::string truncFront(const std::string& v, std::size_t maxChars)
     {
         if (v.size() <= maxChars) return v;
@@ -163,28 +171,26 @@ BarcodeStudioGui::BarcodeStudioGui()
       m_orderService(m_productService, m_seasonsService, m_orderRepo, m_detailRepo,
           m_billRepo, m_billDetailRepo),
       m_reportService(m_orderRepo, m_billRepo, m_billDetailRepo, m_productRepo),
-      m_posBarcode(m_font, {272.0f, 136.0f}, {250.0f, 42.0f}, "Barcode", true),
+      m_posBarcode(m_font, {272.0f, 126.0f}, {250.0f, 42.0f}, "Barcode", true),
       m_posQty(m_font, {534.0f, 136.0f}, {56.0f, 42.0f}, "1", true),
       m_posCustomer(m_font, {750.0f, 332.0f}, {204.0f, 34.0f}, "Customer name"),
-      m_posContact(m_font, {750.0f, 394.0f}, {204.0f, 34.0f}, "03001234567", true),
-      m_posDescBtn(m_font, "Description", {272.0f, 192.0f}, {140.0f, 42.0f}, false),
-      m_posAddBtn(m_font, "Add to Order", {424.0f, 192.0f}, {180.0f, 42.0f}),
+      m_posContact(m_font, {750.0f, 394.0f}, {204.0f, 34.0f}, "0300-1234567", true),
+      m_posAddBtn(m_font, "Add to Order", {272.0f, 178.0f}, {240.0f, 42.0f}),
       m_posCamBtn(m_font, "Start Cam", {602.0f, 136.0f}, {96.0f, 42.0f}, false),
       m_modeDrop(m_font, {750.0f, 444.0f}, {98.0f, 28.0f}),
       m_statusDrop(m_font, {856.0f, 444.0f}, {98.0f, 28.0f}),
       m_merchantDrop(m_font, {750.0f, 494.0f}, {204.0f, 28.0f}),
-      m_posBillBtn(m_font, "Generate Bill", {272.0f, 566.0f}, {200.0f, 44.0f}),
-      m_posNewBtn(m_font, "New Order", {484.0f, 566.0f}, {140.0f, 44.0f}, false),
+      m_posBillBtn(m_font, "Generate Bill", {272.0f, 536.0f}, {200.0f, 44.0f}),
+      m_posNewBtn(m_font, "New Order", {484.0f, 536.0f}, {140.0f, 44.0f}, false),
       m_productsRefresh(m_font, "Refresh List", {770.0f, 22.0f}, {204.0f, 36.0f}, false),
       m_billCloseBtn(m_font, "Close Bill", {586.0f, 566.0f}, {180.0f, 40.0f}),
       m_productsPrev(m_font, "Prev", {756.0f, 584.0f}, {96.0f, 30.0f}, false),
       m_productsNext(m_font, "Next", {862.0f, 584.0f}, {100.0f, 30.0f}, false),
-      m_roleBtn(m_font, "Cashier Mode", {246.0f, 22.0f}, {150.0f, 32.0f}, false),
-      m_posSpecialPct(m_font, {750.0f, 546.0f}, {100.0f, 28.0f}, "Special % (<=8)", true),
-      m_posAmount(m_font, {864.0f, 546.0f}, {140.0f, 28.0f}, "Amount received", true),
-      m_posHoldBtn(m_font, "Hold Order", {272.0f, 618.0f}, {130.0f, 34.0f}, false),
-      m_posResumeBtn(m_font, "Resume", {420.0f, 618.0f}, {100.0f, 34.0f}, false),
-      m_heldDrop(m_font, {534.0f, 618.0f}, {180.0f, 34.0f}),
+      m_posSpecialPct(m_font, {750.0f, 546.0f}, {100.0f, 28.0f}, "0..8", true),
+      m_posAmount(m_font, {864.0f, 546.0f}, {140.0f, 28.0f}, "0.00", true),
+      m_posHoldBtn(m_font, "Hold Order", {272.0f, 592.0f}, {130.0f, 34.0f}, false),
+      m_posResumeBtn(m_font, "Resume", {414.0f, 592.0f}, {100.0f, 34.0f}, false),
+      m_heldDrop(m_font, {526.0f, 592.0f}, {148.0f, 34.0f}),
       m_catIdInput(m_font, {272.0f, 150.0f}, {60.0f, 40.0f}, "ID", true),
       m_catNameInput(m_font, {344.0f, 150.0f}, {240.0f, 40.0f}, "Name"),
       m_catAcronymInput(m_font, {596.0f, 150.0f}, {120.0f, 40.0f}, "Acr"),
@@ -200,18 +206,18 @@ BarcodeStudioGui::BarcodeStudioGui()
       m_invQtyInput(m_font, {544.0f, 150.0f}, {80.0f, 40.0f}, "Qty", true),
       m_invSetBtn(m_font, "Set Stock", {636.0f, 150.0f}, {140.0f, 40.0f}),
       m_invBackBtn(m_font, "Back", {900.0f, 22.0f}, {80.0f, 32.0f}, false),
-      m_peIdInput(m_font, {272.0f, 138.0f}, {80.0f, 36.0f}, "ID", true),
-      m_peNameInput(m_font, {364.0f, 138.0f}, {260.0f, 36.0f}, "Name"),
-      m_peAcronymInput(m_font, {636.0f, 138.0f}, {120.0f, 36.0f}, "Acronym"),
-      m_pePriceInput(m_font, {272.0f, 196.0f}, {120.0f, 36.0f}, "Price", true),
-      m_peTaxInput(m_font, {404.0f, 196.0f}, {120.0f, 36.0f}, "Tax", true),
-      m_peDiscountInput(m_font, {536.0f, 196.0f}, {120.0f, 36.0f}, "Discount", true),
-      m_peQtyInput(m_font, {668.0f, 196.0f}, {100.0f, 36.0f}, "Qty", true),
-      m_peUnitDrop(m_font, {272.0f, 254.0f}, {140.0f, 32.0f}),
-      m_peCategoryDrop(m_font, {424.0f, 254.0f}, {180.0f, 32.0f}),
-      m_peSaveBtn(m_font, "Save", {272.0f, 316.0f}, {140.0f, 40.0f}),
-      m_peBarcodeBtn(m_font, "Regenerate Barcode", {424.0f, 316.0f}, {220.0f, 40.0f}, false),
+      m_peIdInput(m_font, {272.0f, 142.0f}, {80.0f, 36.0f}, "ID", true),
+      m_peNameInput(m_font, {364.0f, 142.0f}, {260.0f, 36.0f}, "Name"),
+      m_peAcronymInput(m_font, {636.0f, 142.0f}, {120.0f, 36.0f}, "Acronym"),
+      m_pePriceInput(m_font, {272.0f, 200.0f}, {120.0f, 36.0f}, "Price", true),
+      m_peTaxInput(m_font, {404.0f, 200.0f}, {120.0f, 36.0f}, "Tax", true),
+      m_peDiscountInput(m_font, {536.0f, 200.0f}, {120.0f, 36.0f}, "Discount", true),
+      m_peQtyInput(m_font, {668.0f, 200.0f}, {100.0f, 36.0f}, "Qty", true),
+      m_peUnitDrop(m_font, {272.0f, 258.0f}, {140.0f, 32.0f}),
+      m_peCategoryDrop(m_font, {424.0f, 258.0f}, {180.0f, 32.0f}),
+      m_peSaveBtn(m_font, "Save", {272.0f, 320.0f}, {140.0f, 40.0f}),
       m_peBackBtn(m_font, "Back", {900.0f, 22.0f}, {80.0f, 32.0f}, false),
+      m_peBarcodeBtn(m_font, "Regenerate Barcode", {424.0f, 320.0f}, {220.0f, 40.0f}, false),
       m_reportDrop(m_font, {272.0f, 128.0f}, {300.0f, 32.0f}),
       m_reportFromInput(m_font, {584.0f, 128.0f}, {140.0f, 32.0f}, "From YYYY-MM-DD"),
       m_reportToInput(m_font, {736.0f, 128.0f}, {140.0f, 32.0f}, "To YYYY-MM-DD"),
@@ -224,12 +230,12 @@ BarcodeStudioGui::BarcodeStudioGui()
       m_heldBackBtn(m_font, "Back", {900.0f, 22.0f}, {80.0f, 32.0f}, false),
       m_heldPrevBtn(m_font, "Prev", {756.0f, 566.0f}, {96.0f, 28.0f}, false),
       m_heldNextBtn(m_font, "Next", {862.0f, 566.0f}, {100.0f, 28.0f}, false),
-      m_oeOrderIdInput(m_font, {272.0f, 138.0f}, {180.0f, 36.0f}, "Order ID", true),
-      m_oeCustomerInput(m_font, {272.0f, 196.0f}, {240.0f, 36.0f}, "Customer"),
-      m_oeContactInput(m_font, {524.0f, 196.0f}, {200.0f, 36.0f}, "Contact"),
-      m_oeLoadBtn(m_font, "Load", {464.0f, 138.0f}, {100.0f, 36.0f}),
-      m_oeApproveBtn(m_font, "Manager Approve", {272.0f, 254.0f}, {200.0f, 40.0f}, false),
-      m_oeSaveBtn(m_font, "Save Changes", {484.0f, 254.0f}, {180.0f, 40.0f}),
+      m_oeOrderIdInput(m_font, {272.0f, 148.0f}, {180.0f, 36.0f}, "Order ID", true),
+      m_oeCustomerInput(m_font, {272.0f, 206.0f}, {240.0f, 36.0f}, "Customer"),
+      m_oeContactInput(m_font, {524.0f, 206.0f}, {200.0f, 36.0f}, "Contact"),
+      m_oeLoadBtn(m_font, "Load", {464.0f, 148.0f}, {100.0f, 36.0f}),
+      m_oeApproveBtn(m_font, "Manager Approve", {272.0f, 266.0f}, {200.0f, 40.0f}, false),
+      m_oeSaveBtn(m_font, "Save Changes", {484.0f, 266.0f}, {180.0f, 40.0f}),
       m_oeBackBtn(m_font, "Back", {900.0f, 22.0f}, {80.0f, 32.0f}, false),
       m_printPdfBtn(m_font, "Print as PDF", {272.0f, 566.0f}, {180.0f, 40.0f}),
       m_printCloseBtn(m_font, "Close", {464.0f, 566.0f}, {140.0f, 40.0f}, false)
@@ -242,7 +248,8 @@ BarcodeStudioGui::BarcodeStudioGui()
     m_posQty.setMaxLength(3);
     m_posQty.setText("1");
     m_posCustomer.setMaxLength(40);
-    m_posContact.setMaxLength(11);
+    m_posContact.setMaxLength(12);
+    m_posContact.setPhoneFormat(true);
     m_modeDrop.setOptions(kPayModes);
     m_modeDrop.setSelected(0);
     m_statusDrop.setOptions(kStatuses);
@@ -251,6 +258,12 @@ BarcodeStudioGui::BarcodeStudioGui()
     m_posSpecialPct.setMaxLength(5);
     m_posSpecialPct.setText("0");
     m_posAmount.setMaxLength(10);
+    m_posAmount.setAllowDecimal(true);
+    m_posSpecialPct.setAllowDecimal(true);
+    m_seasonPctInput.setAllowDecimal(true);
+    m_pePriceInput.setAllowDecimal(true);
+    m_peTaxInput.setAllowDecimal(true);
+    m_peDiscountInput.setAllowDecimal(true);
     m_catIdInput.setMaxLength(2);
     m_catNameInput.setMaxLength(30);
     m_catAcronymInput.setMaxLength(8);
@@ -273,7 +286,8 @@ BarcodeStudioGui::BarcodeStudioGui()
     m_reportDrop.setSelected(0);
     m_oeOrderIdInput.setMaxLength(8);
     m_oeCustomerInput.setMaxLength(40);
-    m_oeContactInput.setMaxLength(11);
+    m_oeContactInput.setMaxLength(12);
+    m_oeContactInput.setPhoneFormat(true);
     m_codeInput.setFocused(true);
     m_window.setFramerateLimit(60);
     applyView();
@@ -315,6 +329,12 @@ bool BarcodeStudioGui::screenshot(const std::string& path, int view)
         m_orderService.addLine("129876", 1);
         m_posMessage = "Added Fresh Milk x2 to the order.";
         if (path.find("dropdown") != std::string::npos) m_statusDrop.setOpen(true);  // QA
+        if (path.find("bill") != std::string::npos)  // QA: open the bill overlay
+        {
+            m_posAmount.setText("600");
+            posCheckout();
+            if (path.find("pdf") != std::string::npos) posPrintPdf();  // QA: with the saved note
+        }
         if (path.find("cam") != std::string::npos)  // QA: simulate a running camera
         {
             m_cameraRunning = true;
@@ -437,10 +457,8 @@ void BarcodeStudioGui::spawnBurst(const sf::Vector2f& centre, int count)
 
 void BarcodeStudioGui::celebrate(const std::string& bubble, const sf::Vector2f& burstAt)
 {
-    m_mascotText = bubble;
-    m_mascotHappy = 3.0f;
+    (void)bubble;  // the sidebar mascot that showed it was removed
     spawnBurst(burstAt);
-    spawnBurst({110.0f, 486.0f}, 14);  // mascot joins in
 }
 
 void BarcodeStudioGui::switchView(View next)
@@ -451,6 +469,16 @@ void BarcodeStudioGui::switchView(View next)
     if (fromCamView && !toCamView) stopCamera();
     else if (fromCamView && toCamView) resetScanState();
     if (next == View::PosOrder || next == View::Products) refreshProducts();
+    if (next == View::PosOrder)
+    {
+        // Ready to scan/type at once - no click into the barcode box.
+        m_posQty.setFocused(false);
+        m_posCustomer.setFocused(false);
+        m_posContact.setFocused(false);
+        m_posSpecialPct.setFocused(false);
+        m_posAmount.setFocused(false);
+        m_posBarcode.setFocused(true);
+    }
     if (next == View::Categories) refreshCategories();
     if (next == View::Seasons) refreshSeasons();
     if (next == View::Inventory) refreshInventory();
@@ -465,23 +493,6 @@ void BarcodeStudioGui::switchView(View next)
     m_heldDrop.close();
     m_view = next;
     m_transition = 0.0f;
-    switch (next)
-    {
-    case View::Generator:     m_mascotText = "Let's create a\nbarcode!"; break;
-    case View::FileScanner:   m_mascotText = "Show me a BMP\nto decode!"; break;
-    case View::CameraScanner: m_mascotText = "Point the camera...\nI'll watch!"; break;
-    case View::PosOrder:      m_mascotText = "Let's ring up\nan order!"; break;
-    case View::Products:      m_mascotText = "Our shelves,\nall stocked!"; break;
-    case View::SelfTest:      m_mascotText = "Fingers crossed...\n6 out of 6!"; break;
-    case View::Categories:    m_mascotText = "Set up the\ncategories!"; break;
-    case View::Seasons:       m_mascotText = "Seasonal\ndiscounts!"; break;
-    case View::Inventory:     m_mascotText = "Stock check\ntime!"; break;
-    case View::ProductEdit:   m_mascotText = "Add or edit\na product!"; break;
-    case View::Reports:       m_mascotText = "Numbers,\nnumbers!"; break;
-    case View::HeldOrders:    m_mascotText = "Resume a\nheld order!"; break;
-    case View::OrderEdit:     m_mascotText = "Editing a\npaid order!"; break;
-    case View::BillPrint:     m_mascotText = "Here's the\nbill!"; break;
-    }
     if (next == View::Generator) m_codeInput.setFocused(true);
     else if (next == View::FileScanner) m_pathInput.setFocused(true);
     else if (next == View::PosOrder) m_posBarcode.setFocused(true);
@@ -489,100 +500,6 @@ void BarcodeStudioGui::switchView(View next)
     else if (next == View::OrderEdit) m_oeOrderIdInput.setFocused(true);
 }
 
-void BarcodeStudioGui::drawMascot()
-{
-    // Speech bubble
-    ui::theme::drawRoundedBox(sidebarRt(), {14.0f, 384.0f}, {192.0f, 52.0f}, 12.0f,
-        ui::theme::White, ui::theme::Border, 1.0f);
-    sf::ConvexShape tail;
-    tail.setPointCount(3);
-    tail.setPoint(0, {92.0f, 436.0f});
-    tail.setPoint(1, {112.0f, 436.0f});
-    tail.setPoint(2, {100.0f, 448.0f});
-    tail.setFillColor(ui::theme::White);
-    sidebarRt().draw(tail);
-    sf::Text bubble(m_font, m_mascotText, ui::theme::scaledSize(12));
-    ui::theme::applyTextScale(bubble);
-    bubble.setFillColor(ui::theme::Text);
-    bubble.setPosition({26.0f, 392.0f});
-    sidebarRt().draw(bubble);
-
-    const float bob = m_mascotHappy > 0.0f
-        ? std::abs(std::sin(m_elapsed * 9.0f)) * -10.0f
-        : std::sin(m_elapsed * 2.0f) * 3.0f;
-    const sf::Vector2f c{110.0f, 508.0f + bob};
-
-    // Ears
-    for (float sx : {-1.0f, 1.0f})
-    {
-        sf::ConvexShape ear;
-        ear.setPointCount(3);
-        ear.setPoint(0, {c.x + sx * 34.0f, c.y - 26.0f});
-        ear.setPoint(1, {c.x + sx * 16.0f, c.y - 30.0f});
-        ear.setPoint(2, {c.x + sx * 30.0f, c.y - 48.0f});
-        ear.setFillColor(sf::Color(0xFFB3CDFF));
-        sidebarRt().draw(ear);
-    }
-    // Body (soft pink blob)
-    sf::CircleShape body(42.0f);
-    body.setPosition({c.x - 42.0f, c.y - 42.0f});
-    body.setFillColor(sf::Color(0xFFC7DAFF));
-    body.setOutlineColor(ui::theme::Primary);
-    body.setOutlineThickness(2.0f);
-    sidebarRt().draw(body);
-    // Bow
-    ui::theme::drawHeart(sidebarRt(), {c.x + 30.0f, c.y - 40.0f}, 7.0f, ui::theme::Primary);
-    // Eyes — pupils follow the mouse; blink every ~3.7 s
-    const float blink = std::fmod(m_elapsed, 3.7f) < 0.12f ? 0.12f : 1.0f;
-    const sf::Vector2f mouseLocal{m_mouse.x + ui::theme::SidebarWidth * m_sidebarClosed, m_mouse.y};
-    sf::Vector2f look{mouseLocal.x - c.x, mouseLocal.y - c.y};
-    const float len = std::sqrt(look.x * look.x + look.y * look.y);
-    if (len > 1.0f) look = {look.x / len * 3.2f, look.y / len * 3.2f};
-    for (float sx : {-1.0f, 1.0f})
-    {
-        const sf::Vector2f eye{c.x + sx * 15.0f, c.y - 8.0f};
-        sf::CircleShape white(7.5f);
-        white.setScale({1.0f, blink});
-        white.setPosition({eye.x - 7.5f, eye.y - 7.5f * blink});
-        white.setFillColor(sf::Color::White);
-        sidebarRt().draw(white);
-        if (blink > 0.5f)
-        {
-            sf::CircleShape pupil(3.6f);
-            pupil.setPosition({eye.x - 3.6f + look.x, eye.y - 3.6f + look.y});
-            pupil.setFillColor(ui::theme::Heading);
-            sidebarRt().draw(pupil);
-        }
-    }
-    // Cheeks + heart mouth
-    for (float sx : {-1.0f, 1.0f})
-    {
-        sf::CircleShape cheek(6.0f);
-        cheek.setPosition({c.x + sx * 27.0f - 6.0f, c.y + 4.0f});
-        cheek.setFillColor(sf::Color(255, 92, 138, 110));
-        sidebarRt().draw(cheek);
-    }
-    ui::theme::drawHeart(sidebarRt(), {c.x, c.y + 10.0f}, 5.0f, ui::theme::PrimaryPressed);
-    // The barcode card she is holding
-    sf::RectangleShape card({66.0f, 38.0f});
-    card.setOrigin({33.0f, 19.0f});
-    card.setPosition({c.x, c.y + 46.0f});
-    card.setRotation(sf::degrees(-4.0f));
-    card.setFillColor(sf::Color::White);
-    card.setOutlineColor(ui::theme::Border);
-    card.setOutlineThickness(1.0f);
-    sidebarRt().draw(card);
-    const float barW[10] = {3, 1, 2, 1, 4, 1, 2, 3, 1, 2};
-    float bx = c.x - 26.0f;
-    for (int i = 0; i < 10; ++i)
-    {
-        sf::RectangleShape bar({barW[i], 24.0f});
-        bar.setPosition({bx, c.y + 46.0f - 12.0f});
-        bar.setFillColor(sf::Color::Black);
-        sidebarRt().draw(bar);
-        bx += barW[i] + 2.6f;
-    }
-}
 
 // ------------------------------------------------- responsive / fullscreen
 // The whole UI is designed on a 1000x680 canvas. applyView() scales that
@@ -674,9 +591,20 @@ void BarcodeStudioGui::handleEvents()
         {
             if (m_view == View::Products)
             {
-                const int maxScroll = std::max(0, static_cast<int>(m_productsCache.size()) - 8);
+                const int maxScroll = std::max(0, static_cast<int>(m_productsCache.size()) - 6);
                 m_productsScroll = std::clamp(
                     m_productsScroll - static_cast<int>(wheel->delta), 0, maxScroll);
+            }
+            else if (m_view == View::Inventory)
+            {
+                const std::string filter = trimStr(m_invSearchInput.getText());
+                int count = 0;
+                for (const Product& p : m_productsCache)
+                    if (filter.empty() || p.acronym.find(filter) != std::string::npos
+                        || p.name.find(filter) != std::string::npos) ++count;
+                const int maxScroll = std::max(0, count - 8);
+                m_invScroll = std::clamp(
+                    m_invScroll - static_cast<int>(wheel->delta), 0, maxScroll);
             }
         }
         if (const auto* moved = event->getIf<sf::Event::MouseMoved>())
@@ -685,6 +613,12 @@ void BarcodeStudioGui::handleEvents()
         }
         if (const auto* text = event->getIf<sf::Event::TextEntered>())
         {
+            if (m_showBill) continue;  // modal bill: no typing behind it
+            // Enter confirms the focused box's screen (fewer presses:
+            // no reaching for the mouse). Handled in ONE place here;
+            // the boxes themselves ignore control keys anyway.
+            if ((text->unicode == 13 || text->unicode == 10) && onEnterKey())
+                continue;
             m_codeInput.handleTextEntered(text->unicode);
             m_fileNameInput.handleTextEntered(text->unicode);
             m_pathInput.handleTextEntered(text->unicode);
@@ -717,8 +651,11 @@ void BarcodeStudioGui::handleEvents()
         }
         if (const auto* key = event->getIf<sf::Event::KeyPressed>())
         {
-            if (key->code == sf::Keyboard::Key::Enter) handleEnterKey();
-            else if (key->code == sf::Keyboard::Key::Escape)
+            // Enter is handled in ONE place only: onEnterKey(), via
+            // the TextEntered event. A second Enter handler here used
+            // to fire the same action twice per press (e.g. a POS
+            // item was added two times).
+            if (key->code == sf::Keyboard::Key::Escape)
             {
                 m_codeInput.setFocused(false);
                 m_fileNameInput.setFocused(false);
@@ -733,12 +670,11 @@ void BarcodeStudioGui::handleEvents()
             // is being edited - otherwise the digit belongs to the box
             // (TextEntered types it) and must not switch screens.
             else if (anyTextFocused()) { /* digit goes to the text box */ }
-            else if (key->code == sf::Keyboard::Key::Num1) switchView(View::Generator);
-            else if (key->code == sf::Keyboard::Key::Num2) switchView(View::FileScanner);
-            else if (key->code == sf::Keyboard::Key::Num3) switchView(View::CameraScanner);
-            else if (key->code == sf::Keyboard::Key::Num4) switchView(View::PosOrder);
-            else if (key->code == sf::Keyboard::Key::Num5) switchView(View::Products);
-            else if (key->code == sf::Keyboard::Key::Num6) switchView(View::SelfTest);
+            else if (key->code == sf::Keyboard::Key::Num1 && !m_showBill) switchView(View::Generator);
+            else if (key->code == sf::Keyboard::Key::Num2 && !m_showBill) switchView(View::FileScanner);
+            else if (key->code == sf::Keyboard::Key::Num4 && !m_showBill) switchView(View::PosOrder);
+            else if (key->code == sf::Keyboard::Key::Num5 && !m_showBill) switchView(View::Products);
+            else if (key->code == sf::Keyboard::Key::Num6 && !m_showBill) switchView(View::SelfTest);
         }
         if (const auto* mouse = event->getIf<sf::Event::MouseButtonPressed>())
         {
@@ -747,6 +683,17 @@ void BarcodeStudioGui::handleEvents()
             m_mouse = pos;
             // Ignore clicks in the letterbox bars of a maximised window.
             if (pos.x < 0.0f || pos.x > m_w || pos.y < 0.0f || pos.y > m_h) continue;
+
+            // A generated bill is modal: until it is closed, only its
+            // own buttons respond - the sidebar toggle, the
+            // navigation and the screen behind it stay inert, so
+            // the layout cannot shift under the open bill.
+            if (m_showBill)
+            {
+                if (m_billCloseBtn.handleClick(pos)) posNewOrder();
+                else if (m_printPdfBtn.handleClick(pos)) posPrintPdf();
+                continue;
+            }
 
             // The sidebar open/close button lives on the window itself.
             if (sidebarToggleRect().contains(pos))
@@ -766,17 +713,21 @@ void BarcodeStudioGui::handleEvents()
                     m_window.close();
                     continue;
                 }
-                // Role pill
-                if (spos.y >= 60.0f && spos.y < 88.0f)
+                // Role switch: left segment = Cashier, right = Manager.
+                if (spos.y >= 84.0f && spos.y < 126.0f)
                 {
-                    m_role = (m_role == UserRole::Manager)
+                    const UserRole target = (spos.x < 109.0f)
                         ? UserRole::Cashier : UserRole::Manager;
-                    if (m_role == UserRole::Cashier)
+                    if (target != m_role)
                     {
-                        const View managerViews[] = {View::Categories, View::Seasons,
-                            View::Inventory, View::ProductEdit, View::Reports};
-                        for (View v : managerViews)
-                            if (m_view == v) { switchView(View::PosOrder); break; }
+                        m_role = target;
+                        if (m_role == UserRole::Cashier)
+                        {
+                            const View managerViews[] = {View::Categories, View::Seasons,
+                                View::Inventory, View::ProductEdit, View::Reports};
+                            for (View v : managerViews)
+                                if (m_view == v) { switchView(View::PosOrder); break; }
+                        }
                     }
                     continue;
                 }
@@ -785,7 +736,6 @@ void BarcodeStudioGui::handleEvents()
                 static const NavEntry kNav[] = {
                     {View::Generator,     false},
                     {View::FileScanner,   false},
-                    {View::CameraScanner, false},
                     {View::PosOrder,      false},
                     {View::HeldOrders,    false},
                     {View::Products,      false},
@@ -798,27 +748,12 @@ void BarcodeStudioGui::handleEvents()
                     {View::SelfTest,      false},
                 };
                 const bool isManager = (m_role == UserRole::Manager);
-                float y = 100.0f;
+                float y = 146.0f;
                 for (const NavEntry& e : kNav)
                 {
                     if (e.managerOnly && !isManager) continue;
                     if (spos.y >= y && spos.y < y + 30.0f) { switchView(e.v); break; }
                     y += 34.0f;
-                }
-                continue;
-            }
-
-            // Role pill on every screen (top-left, next to the heading)
-            if (sf::FloatRect({kLeft, 22.0f}, {150.0f, 32.0f}).contains(pos))
-            {
-                m_role = (m_role == UserRole::Manager)
-                    ? UserRole::Cashier : UserRole::Manager;
-                if (m_role == UserRole::Cashier)
-                {
-                    const View managerViews[] = {View::Categories, View::Seasons,
-                        View::Inventory, View::ProductEdit, View::Reports};
-                    for (View v : managerViews)
-                        if (m_view == v) { switchView(View::PosOrder); break; }
                 }
                 continue;
             }
@@ -837,8 +772,6 @@ void BarcodeStudioGui::handleEvents()
                     code[0] = static_cast<char>('1' + rng()() % 9);
                     for (int i = 1; i < 6; ++i) code[i] = static_cast<char>('0' + digit(rng()));
                     m_codeInput.setText(code);
-                    m_mascotText = "Ooh, a lucky\nrandom code!";
-                    m_mascotHappy = 1.2f;
                 }
                 else if (m_generate.handleClick(pos)) generateBarcode();
             }
@@ -862,25 +795,14 @@ void BarcodeStudioGui::handleEvents()
             }
             else if (m_view == View::PosOrder)
             {
-                if (m_showBill)
-                {
-                    if (m_billCloseBtn.handleClick(pos))
-                    {
-                        m_showBill = false;
-                        resetScanState();
-                        if (m_cameraRunning) { stopCamera(); startCamera(); }
-                    }
-                    else if (m_printPdfBtn.handleClick(pos))
-                    {
-                        posPrintPdf();
-                    }
-                }
-                else
                 {
                     m_posBarcode.handleClick(pos);
                     m_posQty.handleClick(pos);
                     m_posCustomer.handleClick(pos);
                     m_posContact.handleClick(pos);
+                    m_posSpecialPct.handleClick(pos);
+                    m_posAmount.handleClick(pos);
+                    const int heldBefore = m_heldDrop.selected();
                     // Drop-downs next: an open list swallows the click.
                     if (m_modeDrop.handleClick(pos) || m_statusDrop.handleClick(pos)
                         || m_merchantDrop.handleClick(pos))
@@ -897,20 +819,26 @@ void BarcodeStudioGui::handleEvents()
                     {
                         if (m_cameraRunning) stopCamera(); else startCamera();
                     }
-                    else if (m_posDescBtn.handleClick(pos)) posDescribe();
                     else if (m_posAddBtn.handleClick(pos)) posAdd();
                     else if (m_posBillBtn.handleClick(pos)) posCheckout();
                     else if (m_posNewBtn.handleClick(pos)) posNewOrder();
                     else if (m_posHoldBtn.handleClick(pos)) posHold();
                     else if (m_posResumeBtn.handleClick(pos)) posResume();
-                    else if (m_heldDrop.handleClick(pos)) {}
+                    else if (m_heldDrop.handleClick(pos))
+                    {
+                        // Picking a held order resumes it at once -
+                        // no separate Resume press (point 10). The
+                        // Resume button still covers re-picking the
+                        // order that is already shown.
+                        if (m_heldDrop.selected() != heldBefore) posResume();
+                    }
                     else
                     {
                         // Cart row controls: [-] qty [+] ... [x]
                         const auto& lines = m_orderService.lines();
                         for (std::size_t i = 0; i < lines.size() && i < 4; ++i)
                         {
-                            const float ry = 352.0f + static_cast<float>(i) * 48.0f;
+                            const float ry = 324.0f + static_cast<float>(i) * 45.0f;
                             if (pos.y < ry || pos.y >= ry + 48.0f) continue;
                             const float crx = m_w - 1000.0f;
                             if (sf::FloatRect({488.0f + crx, ry + 10.0f}, {26.0f, 26.0f}).contains(pos))
@@ -925,12 +853,12 @@ void BarcodeStudioGui::handleEvents()
             }
             else if (m_view == View::Products)
             {
-                const int maxScroll = std::max(0, static_cast<int>(m_productsCache.size()) - 8);
+                const int maxScroll = std::max(0, static_cast<int>(m_productsCache.size()) - 6);
                 if (m_productsRefresh.handleClick(pos)) refreshProducts();
                 else if (m_productsPrev.handleClick(pos))
-                    m_productsScroll = std::max(0, m_productsScroll - 8);
+                    m_productsScroll = std::max(0, m_productsScroll - 6);
                 else if (m_productsNext.handleClick(pos))
-                    m_productsScroll = std::min(maxScroll, m_productsScroll + 8);
+                    m_productsScroll = std::min(maxScroll, m_productsScroll + 6);
             }
                         else if (m_view == View::SelfTest)
             {
@@ -956,10 +884,15 @@ void BarcodeStudioGui::handleEvents()
                 {
                     for (std::size_t i = 0; i < m_seasonsCache.size() && i < 6; ++i)
                     {
-                        const float ry = 320.0f + static_cast<float>(i) * 44.0f;
-                        if (pos.y >= ry && pos.y < ry + 40.0f)
+                        // Must match drawSeasons: rows start at y=368
+                        // and step 40 (this was 320/44, which selected
+                        // the wrong row).
+                        const float ry = 368.0f + static_cast<float>(i) * 40.0f;
+                        if (pos.y >= ry && pos.y < ry + 36.0f)
                         {
                             m_seasonSelectedIdx = static_cast<int>(i);
+                            // One click on the Active column toggles.
+                            if (pos.x >= 630.0f) seasonToggle();
                             break;
                         }
                     }
@@ -974,22 +907,30 @@ void BarcodeStudioGui::handleEvents()
                 else
                 {
                     const std::string filter = trimStr(m_invSearchInput.getText());
-                    int shown = 0;
+                    std::vector<std::size_t> vis;
                     for (std::size_t i = 0; i < m_productsCache.size(); ++i)
                     {
                         const Product& p = m_productsCache[i];
                         if (!filter.empty()
                             && p.acronym.find(filter) == std::string::npos
                             && p.name.find(filter) == std::string::npos) continue;
-                        const float ry = 200.0f + static_cast<float>(shown) * 44.0f;
-                        if (pos.y >= ry && pos.y < ry + 40.0f)
+                        vis.push_back(i);
+                    }
+                    const int maxScroll = std::max(0, static_cast<int>(vis.size()) - 8);
+                    if (m_invScroll > maxScroll) m_invScroll = maxScroll;
+                    const int first = std::max(0, m_invScroll);
+                    const int last = std::min(static_cast<int>(vis.size()), first + 8);
+                    for (int k = first; k < last; ++k)
+                    {
+                        const std::size_t i = vis[static_cast<std::size_t>(k)];
+                        const Product& p = m_productsCache[i];
+                        const float ry = 296.0f + static_cast<float>(k - first) * 41.0f;
+                        if (pos.y >= ry && pos.y < ry + 38.0f)
                         {
                             m_invSelectedIdx = static_cast<int>(i);
                             m_invQtyInput.setText(std::to_string(p.availableQuantity));
                             break;
                         }
-                        ++shown;
-                        if (shown >= 8) break;
                     }
                 }
             }
@@ -1004,19 +945,19 @@ void BarcodeStudioGui::handleEvents()
                 m_peQtyInput.handleClick(pos);
                 bool rowHit = false;
                 {
-                    float ry = 464.0f;
+                    float ry = 458.0f;
                     int shown = 0;
                     for (const Product& p : m_productsCache)
                     {
                         if (shown >= 4) break;
-                        if (pos.y >= ry && pos.y < ry + 36.0f)
+                        if (pos.y >= ry && pos.y < ry + 34.0f)
                         {
                             m_peIdInput.setText(std::to_string(p.id));
                             productEditLoad();
                             rowHit = true;
                             break;
                         }
-                        ry += 40.0f;
+                        ry += 38.0f;
                         ++shown;
                     }
                 }
@@ -1031,7 +972,11 @@ void BarcodeStudioGui::handleEvents()
             {
                 m_reportFromInput.handleClick(pos);
                 m_reportToInput.handleClick(pos);
-                if (m_reportDrop.handleClick(pos)) {}
+                const int reportBefore = m_reportDrop.selected();
+                if (m_reportDrop.handleClick(pos))
+                {
+                    if (m_reportDrop.selected() != reportBefore) runReport();
+                }
                 else if (m_reportRunBtn.handleClick(pos)) runReport();
                 else if (m_reportBackBtn.handleClick(pos)) switchView(View::PosOrder);
                 else if (m_reportPrevBtn.handleClick(pos))
@@ -1060,7 +1005,10 @@ void BarcodeStudioGui::handleEvents()
                     {
                         const std::size_t row = static_cast<std::size_t>(m_heldScroll) + i;
                         if (row >= m_heldCache.size()) break;
-                        const float ry = 200.0f + static_cast<float>(i) * 44.0f;
+                        // Must match drawHeldOrders: rows start at
+                        // y=168 (this was 200, which selected the
+                        // wrong order).
+                        const float ry = 168.0f + static_cast<float>(i) * 44.0f;
                         if (pos.y >= ry && pos.y < ry + 40.0f)
                         {
                             m_heldDrop.setSelected(static_cast<int>(row));
@@ -1081,8 +1029,8 @@ void BarcodeStudioGui::handleEvents()
                 else
                 {
                     // Quantity steppers on the loaded order's rows
-                    // (rows are drawn from y=404 in steps of 44, max 4).
-                    float ry = 404.0f;
+                    // (rows are drawn from y=412 in steps of 44, max 4).
+                    float ry = 412.0f;
                     for (std::size_t i = 0; i < m_oeLines.size() && i < 4; ++i)
                     {
                         if (sf::FloatRect({636.0f, ry}, {30.0f, 40.0f}).contains(pos))
@@ -1112,33 +1060,21 @@ void BarcodeStudioGui::handleEvents()
     }
 }
 
-void BarcodeStudioGui::handleEnterKey()
-{
-    switch (m_view)
-    {
-    case View::Generator:
-        if (m_generate.isEnabled()) generateBarcode();
-        else
-        {
-            m_shake = 0.4f;
-            showToast("Enter exactly 6 digits (first digit 1-9).", false);
-        }
-        break;
-    case View::FileScanner:   decodeFile(); break;
-    case View::CameraScanner: if (m_scanLocked) resetScan(); break;
-    case View::PosOrder:      posAdd(); break;
-    case View::Products:      break;
-    case View::SelfTest:      runSelfTest(); break;
-    }
-}
 
 // ------------------------------------------------------------------- update
 void BarcodeStudioGui::update(float deltaSeconds)
 {
+    // POS: a complete 6-digit code in the barcode box describes
+    // itself - no button press needed (Deliverable 3, point 10).
+    if (m_view == View::PosOrder && !m_showBill)
+    {
+        const std::string code = trimmed(m_posBarcode.getText());
+        if (code.size() == 6 && code != m_autoDescCode) posDescribe();
+        else if (code.size() != 6) m_autoDescCode.clear();
+    }
     m_elapsed += deltaSeconds;
     if (m_transition < 1.0f) m_transition = std::min(1.0f, m_transition + deltaSeconds / 0.32f);
     if (m_shake > 0.0f) m_shake = std::max(0.0f, m_shake - deltaSeconds);
-    if (m_mascotHappy > 0.0f) m_mascotHappy -= deltaSeconds;
     m_testRunTime += deltaSeconds;
     for (float& p : m_tilePop) p = std::max(0.0f, p - deltaSeconds * 2.6f);
     updateParticles(deltaSeconds);
@@ -1149,6 +1085,11 @@ void BarcodeStudioGui::update(float deltaSeconds)
     const float sbStep = deltaSeconds / 0.25f;
     if (m_sidebarClosed < sbTarget) m_sidebarClosed = std::min(sbTarget, m_sidebarClosed + sbStep);
     else if (m_sidebarClosed > sbTarget) m_sidebarClosed = std::max(sbTarget, m_sidebarClosed - sbStep);
+    // Ease the role slider's thumb toward the active role's end.
+    const float roleTarget = (m_role == UserRole::Manager) ? 1.0f : 0.0f;
+    const float roleStep = deltaSeconds / 0.18f;
+    if (m_roleSlide < roleTarget) m_roleSlide = std::min(roleTarget, m_roleSlide + roleStep);
+    else if (m_roleSlide > roleTarget) m_roleSlide = std::max(roleTarget, m_roleSlide - roleStep);
     const sf::Vector2f cpos = contentMouse();  // widgets live in content space
     m_codeInput.update(deltaSeconds);
     m_fileNameInput.update(deltaSeconds);
@@ -1169,7 +1110,6 @@ void BarcodeStudioGui::update(float deltaSeconds)
     m_modeDrop.update(cpos, deltaSeconds);
     m_statusDrop.update(cpos, deltaSeconds);
     m_merchantDrop.update(cpos, deltaSeconds);
-    m_posDescBtn.update(cpos, deltaSeconds);
     m_posAddBtn.update(cpos, deltaSeconds);
     m_posCamBtn.update(cpos, deltaSeconds);
     m_posBillBtn.update(cpos, deltaSeconds);
@@ -1177,7 +1117,6 @@ void BarcodeStudioGui::update(float deltaSeconds)
     m_productsRefresh.update(cpos, deltaSeconds);
     m_productsPrev.update(cpos, deltaSeconds);
     m_productsNext.update(cpos, deltaSeconds);
-        m_roleBtn.update(cpos, deltaSeconds);
     m_posSpecialPct.update(deltaSeconds);
     m_posAmount.update(deltaSeconds);
     m_posHoldBtn.update(cpos, deltaSeconds);
@@ -1345,9 +1284,14 @@ void BarcodeStudioGui::draw()
     m_window.draw(contentSprite);
     m_window.setView(sf::View(sf::FloatRect({0.0f, 0.0f}, {m_w, m_h})));
 
-    drawSidebarToggle();
-    drawRoleButton();
-    drawBursts();
+    // While a bill is open it is modal: the toggle and the
+    // particle effects stay in the back frame behind its dim
+    // layer (and the toggle ignores clicks - see handleEvents).
+    if (!m_showBill)
+    {
+        drawSidebarToggle();
+        drawBursts();
+    }
     m_window.display();
 }
 
@@ -1374,17 +1318,6 @@ void BarcodeStudioGui::drawSidebarToggle()
     }
 }
 
-void BarcodeStudioGui::drawRoleButton()
-{
-    const sf::FloatRect r({kLeft, 22.0f}, {150.0f, 32.0f});
-    const bool isManager = (m_role == UserRole::Manager);
-    ui::theme::drawRoundedBox(rt(), r.position, r.size, 10.0f,
-        isManager ? ui::theme::LightPanel : ui::theme::White,
-        ui::theme::Border, 1.0f);
-    rt().draw(makeText(isManager ? "Manager Mode" : "Cashier Mode",
-        14, {r.position.x + 12.0f, r.position.y + 6.0f},
-        isManager ? ui::theme::ActiveText : ui::theme::Heading));
-}
 
 sf::Text BarcodeStudioGui::makeText(const std::string& value, unsigned int size,
     const sf::Vector2f& position, sf::Color color) const
@@ -1402,21 +1335,33 @@ void BarcodeStudioGui::drawSidebar()
     sidebar.setFillColor(ui::theme::SidebarBg);
     sidebarRt().draw(sidebar);
 
-    sf::Text title = makeText("Chili Mili", 22, {56.0f, 30.0f}, ui::theme::Heading);
+    sf::Text title = makeText("Chili Mili", 22, {16.0f, 30.0f}, ui::theme::Heading);
     const sf::FloatRect tb = ui::theme::scaledBounds(title);
-    ui::theme::drawHeart(sidebarRt(),
-        {32.0f, 30.0f + tb.position.y + tb.size.y / 2.0f}, 12.0f, ui::theme::Primary);
     sidebarRt().draw(title);
+    ui::theme::drawHeart(sidebarRt(),
+        {16.0f + tb.size.x + 18.0f, 30.0f + tb.position.y + tb.size.y / 2.0f},
+        12.0f, ui::theme::Primary);
 
-    // ---- Role switch pill ----
+    // ---- Role switch: a sliding Cashier / Manager toggle ----
     {
-        const sf::FloatRect r({12.0f, 60.0f}, {196.0f, 28.0f});
         const bool isManager = (m_role == UserRole::Manager);
-        ui::theme::drawRoundedBox(sidebarRt(), r.position, r.size, 8.0f,
-            isManager ? ui::theme::LightPanel : ui::theme::White,
-            ui::theme::Border, 1.0f);
-        sidebarRt().draw(makeText(isManager ? "Role: Manager" : "Role: Cashier",
-            13, {22.0f, 66.0f}, isManager ? ui::theme::ActiveText : ui::theme::Heading));
+        ui::theme::drawRoundedBox(sidebarRt(), {12.0f, 84.0f}, {196.0f, 42.0f},
+            11.0f, ui::theme::White, ui::theme::Border, 1.0f);
+        // The thumb slides between the two ends; m_roleSlide is eased
+        // toward the active role in update().
+        const float thumbX = 14.0f + m_roleSlide * 95.0f;
+        ui::theme::drawRoundedBox(sidebarRt(), {thumbX, 87.0f}, {93.0f, 36.0f},
+            9.0f, ui::theme::Primary, ui::theme::Primary, 1.0f);
+        const auto roleLabel = [&](float x, const char* text, bool active) {
+            sf::Text t = makeText(text, 13, {0.0f, 0.0f},
+                active ? ui::theme::White : ui::theme::Heading);
+            const sf::FloatRect b = ui::theme::scaledBounds(t);
+            t.setPosition({x + (93.0f - b.size.x) / 2.0f - b.position.x,
+                87.0f + (36.0f - b.size.y) / 2.0f - b.position.y});
+            sidebarRt().draw(t);
+        };
+        roleLabel(14.0f, "CASHIER", !isManager);
+        roleLabel(109.0f, "MANAGER", isManager);
     }
 
     // ---- Nav entries: cashier always, manager-only when role is Manager ----
@@ -1424,7 +1369,6 @@ void BarcodeStudioGui::drawSidebar()
     static const NavEntry kNav[] = {
         {View::Generator,     "Generate",      false},
         {View::FileScanner,   "Read from File",false},
-        {View::CameraScanner, "Camera Scan",   false},
         {View::PosOrder,      "POS Order",     false},
         {View::HeldOrders,    "Held Orders",   false},
         {View::Products,      "Products",      false},
@@ -1437,8 +1381,8 @@ void BarcodeStudioGui::drawSidebar()
         {View::SelfTest,      "Self-Test",     false},
     };
     const bool isManager = (m_role == UserRole::Manager);
-    float y = 100.0f;
-    float pillY = 100.0f;
+    float y = 146.0f;
+    float pillY = 146.0f;
     for (const NavEntry& e : kNav)
     {
         if (e.managerOnly && !isManager) continue;
@@ -1451,7 +1395,7 @@ void BarcodeStudioGui::drawSidebar()
     accent.setFillColor(ui::theme::Primary);
     sidebarRt().draw(accent);
 
-    y = 100.0f;
+    y = 146.0f;
     for (const NavEntry& e : kNav)
     {
         if (e.managerOnly && !isManager) continue;
@@ -1460,7 +1404,6 @@ void BarcodeStudioGui::drawSidebar()
         y += 34.0f;
     }
 
-    drawMascot();
     ui::theme::drawRoundedBox(sidebarRt(), {12.0f, 606.0f}, {196.0f, 48.0f}, 12.0f,
         ui::theme::White, ui::theme::Accent, 1.2f);
     sidebarRt().draw(makeText("Exit", 16, {30.0f, 619.0f}, ui::theme::PrimaryPressed));
@@ -1644,8 +1587,8 @@ void BarcodeStudioGui::drawCameraScanner()
         if (s.x > 0 && s.y > 0)
         {
             const float scale = std::min(video.size.x / s.x, video.size.y / s.y);
-            camSprite.setScale({scale, scale});
-            camSprite.setPosition({video.position.x + (video.size.x - s.x * scale) / 2.0f,
+            camSprite.setScale({-scale, scale});  // mirrored preview (selfie view)
+            camSprite.setPosition({video.position.x + (video.size.x + s.x * scale) / 2.0f,
                 video.position.y + (video.size.y - s.y * scale) / 2.0f});
             rt().draw(camSprite);
         }
@@ -1850,7 +1793,7 @@ void BarcodeStudioGui::runSelfTest()
 void BarcodeStudioGui::showToast(const std::string& /*message*/, bool /*success*/)
 {
     // No pop-up toast box (user feedback): results are reported inside
-    // the screens themselves and by the mascot, not in a corner box.
+    // the screens themselves, not in a corner box.
 }
 
 std::string BarcodeStudioGui::chooseFile()
@@ -1884,7 +1827,6 @@ void BarcodeStudioGui::startCamera()
         m_cameraStatus = "Starting camera...";
     }
     m_cameraToggleBtn.setLabel("Stop Camera");
-    m_mascotText = "Watching...\nhold it steady!";
     m_cameraThread = std::thread(&BarcodeStudioGui::cameraWorkerLoop, this);
 }
 
@@ -2073,22 +2015,28 @@ void BarcodeStudioGui::drawCategories()
         rt().draw(makeText(m_catMessage, 12, {272.0f, 256.0f},
             m_catMessage.find("added") != std::string::npos ? ui::theme::Success : ui::theme::Error));
 
-    ui::theme::drawCard(rt(), {{246.0f, 300.0f}, {728.0f + rx, 324.0f}});
+    ui::theme::drawCard(rt(), {{246.0f, 300.0f}, {728.0f + rx, 360.0f}});
     rt().draw(makeText("Existing Categories", 15, {272.0f, 316.0f}, ui::theme::Heading));
     rt().draw(makeText("Id", 11, {272.0f, 344.0f}, ui::theme::Muted));
     rt().draw(makeText("Name", 11, {336.0f, 344.0f}, ui::theme::Muted));
     rt().draw(makeText("Acronym", 11, {596.0f, 344.0f}, ui::theme::Muted));
-    float y = 368.0f;
+    float y = 362.0f;
     if (m_categoriesCache.empty())
         rt().draw(makeText("No categories yet - add one above.", 13, {272.0f, 380.0f}, ui::theme::Muted));
+    int shownCats = 0;
     for (const Category& c : m_categoriesCache)
     {
-        ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 36.0f}, 8.0f, ui::theme::LightPanel);
-        rt().draw(makeText(c.id, 13, {272.0f, y + 8.0f}, ui::theme::Heading));
-        rt().draw(makeText(c.name, 13, {336.0f, y + 8.0f}, ui::theme::Text));
-        rt().draw(makeText(c.acronym, 13, {596.0f, y + 8.0f}, ui::theme::Text));
-        y += 40.0f;
+        if (shownCats >= 8) break;
+        ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 30.0f}, 8.0f, ui::theme::LightPanel);
+        rt().draw(makeText(c.id, 13, {272.0f, y + 6.0f}, ui::theme::Heading));
+        rt().draw(makeText(c.name, 13, {336.0f, y + 6.0f}, ui::theme::Text));
+        rt().draw(makeText(c.acronym, 13, {596.0f, y + 6.0f}, ui::theme::Text));
+        y += 34.0f;
+        ++shownCats;
     }
+    if (static_cast<int>(m_categoriesCache.size()) > shownCats)
+        rt().draw(makeText("...and " + std::to_string(m_categoriesCache.size() - shownCats)
+            + " more.", 11, {272.0f, 638.0f}, ui::theme::Muted));
 }
 
 void BarcodeStudioGui::drawSeasons()
@@ -2126,6 +2074,13 @@ void BarcodeStudioGui::drawSeasons()
         const bool selected = (static_cast<int>(i) == m_seasonSelectedIdx);
         ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 36.0f}, 8.0f,
             selected ? ui::theme::Active : ui::theme::LightPanel);
+        if (selected)
+        {
+            sf::RectangleShape accent({4.0f, 24.0f});
+            accent.setPosition({262.0f, y + 6.0f});
+            accent.setFillColor(ui::theme::Primary);
+            rt().draw(accent);
+        }
         rt().draw(makeText(s.startDate, 13, {272.0f, y + 8.0f}, ui::theme::Text));
         rt().draw(makeText(s.endDate, 13, {396.0f, y + 8.0f}, ui::theme::Text));
         rt().draw(makeText(stringutils::money(s.discountPercent) + "%",
@@ -2142,40 +2097,67 @@ void BarcodeStudioGui::drawInventory()
     rt().draw(makeText("Inventory", 25, {kLeft, 26.0f}, ui::theme::Heading));
     m_invBackBtn.draw(rt());
 
-    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 108.0f}});
+    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 112.0f}});
     rt().draw(makeText("Filter / Set Stock", 15, {272.0f, 108.0f}, ui::theme::Heading));
     m_invSearchInput.draw(rt());
     m_invQtyInput.draw(rt());
     m_invSetBtn.draw(rt());
     if (!m_invMessage.empty())
-        rt().draw(makeText(m_invMessage, 12, {272.0f, 156.0f},
+        rt().draw(makeText(m_invMessage, 12, {272.0f, 210.0f},
             m_invMessage.find("updated") != std::string::npos ? ui::theme::Success : ui::theme::Error));
 
-    ui::theme::drawCard(rt(), {{246.0f, 214.0f}, {728.0f + rx, 410.0f}});
-    rt().draw(makeText("Products", 15, {272.0f, 230.0f}, ui::theme::Heading));
-    rt().draw(makeText("Acronym", 11, {272.0f, 258.0f}, ui::theme::Muted));
-    rt().draw(makeText("Name", 11, {366.0f, 258.0f}, ui::theme::Muted));
-    rt().draw(makeText("Stock", 11, {676.0f, 258.0f}, ui::theme::Muted));
+    ui::theme::drawCard(rt(), {{246.0f, 228.0f}, {728.0f + rx, 396.0f}});
+    rt().draw(makeText("Products", 15, {272.0f, 240.0f}, ui::theme::Heading));
+    rt().draw(makeText("Acronym", 11, {272.0f, 268.0f}, ui::theme::Muted));
+    rt().draw(makeText("Name", 11, {366.0f, 268.0f}, ui::theme::Muted));
+    rt().draw(makeText("Stock", 11, {676.0f, 268.0f}, ui::theme::Muted));
     const std::string filter = trimStr(m_invSearchInput.getText());
-    int shown = 0;
-    for (std::size_t i = 0; i < m_productsCache.size() && shown < 8; ++i)
+    std::vector<std::size_t> vis;
+    for (std::size_t i = 0; i < m_productsCache.size(); ++i)
     {
         const Product& p = m_productsCache[i];
         if (!filter.empty()
             && p.acronym.find(filter) == std::string::npos
             && p.name.find(filter) == std::string::npos) continue;
-        const float y = 284.0f + static_cast<float>(shown) * 44.0f;
+        vis.push_back(i);
+    }
+    const int totalVis = static_cast<int>(vis.size());
+    const int maxScroll = std::max(0, totalVis - 8);
+    if (m_invScroll > maxScroll) m_invScroll = maxScroll;
+    if (m_invScroll < 0) m_invScroll = 0;
+    const int first = m_invScroll;
+    const int last = std::min(totalVis, first + 8);
+    for (int k = first; k < last; ++k)
+    {
+        const std::size_t i = vis[static_cast<std::size_t>(k)];
+        const Product& p = m_productsCache[i];
+        const float y = 296.0f + static_cast<float>(k - first) * 41.0f;
         const bool selected = (static_cast<int>(i) == m_invSelectedIdx);
-        ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 40.0f}, 8.0f,
+        ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 38.0f}, 8.0f,
             selected ? ui::theme::Active : ui::theme::LightPanel);
+        if (selected)
+        {
+            sf::RectangleShape accent({4.0f, 26.0f});
+            accent.setPosition({262.0f, y + 6.0f});
+            accent.setFillColor(ui::theme::Primary);
+            rt().draw(accent);
+        }
         rt().draw(makeText(p.acronym, 13, {272.0f, y + 10.0f}, ui::theme::Heading));
         rt().draw(makeText(truncFront(p.name, 32), 13, {366.0f, y + 10.0f}, ui::theme::Text));
         rt().draw(makeText(std::to_string(p.availableQuantity), 13, {676.0f, y + 10.0f},
             p.availableQuantity > 0 ? ui::theme::Text : ui::theme::Error));
-        ++shown;
     }
-    if (shown == 0)
-        rt().draw(makeText("No products match the filter.", 13, {272.0f, 300.0f}, ui::theme::Muted));
+    if (totalVis == 0)
+        rt().draw(makeText("No products match the filter.", 13, {272.0f, 310.0f}, ui::theme::Muted));
+    if (totalVis > 8)  // slim scrollbar on the card's right edge, as on Products
+    {
+        const float trackX = 958.0f + rx, trackY = 296.0f, trackH = 325.0f;
+        ui::theme::drawRoundedBox(rt(), {trackX, trackY}, {6.0f, trackH}, 3.0f, ui::theme::LightPanel);
+        const float thumbH = std::max(28.0f, trackH * 8.0f / static_cast<float>(totalVis));
+        const float thumbY = trackY + (trackH - thumbH) *
+            (maxScroll == 0 ? 0.0f : static_cast<float>(first) / static_cast<float>(maxScroll));
+        ui::theme::drawRoundedBox(rt(), {trackX, thumbY}, {6.0f, thumbH}, 3.0f, ui::theme::Accent);
+    }
 }
 
 void BarcodeStudioGui::drawProductEdit()
@@ -2186,55 +2168,64 @@ void BarcodeStudioGui::drawProductEdit()
 
     ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 300.0f}});
     rt().draw(makeText("Product", 15, {272.0f, 104.0f}, ui::theme::Heading));
-    rt().draw(makeText("Id", 11, {272.0f, 122.0f}, ui::theme::Muted));
-    rt().draw(makeText("Name", 11, {364.0f, 122.0f}, ui::theme::Muted));
-    rt().draw(makeText("Acronym", 11, {636.0f, 122.0f}, ui::theme::Muted));
+    rt().draw(makeText("Id", 11, {272.0f, 126.0f}, ui::theme::Muted));
+    rt().draw(makeText("Name", 11, {364.0f, 126.0f}, ui::theme::Muted));
+    rt().draw(makeText("Acronym", 11, {636.0f, 126.0f}, ui::theme::Muted));
     m_peIdInput.draw(rt());
     m_peNameInput.draw(rt());
     m_peAcronymInput.draw(rt());
-    rt().draw(makeText("Price", 11, {272.0f, 180.0f}, ui::theme::Muted));
-    rt().draw(makeText("Tax", 11, {404.0f, 180.0f}, ui::theme::Muted));
-    rt().draw(makeText("Discount", 11, {536.0f, 180.0f}, ui::theme::Muted));
-    rt().draw(makeText("Stock", 11, {668.0f, 180.0f}, ui::theme::Muted));
+    rt().draw(makeText("Price", 11, {272.0f, 184.0f}, ui::theme::Muted));
+    rt().draw(makeText("Tax", 11, {404.0f, 184.0f}, ui::theme::Muted));
+    rt().draw(makeText("Discount", 11, {536.0f, 184.0f}, ui::theme::Muted));
+    rt().draw(makeText("Stock", 11, {668.0f, 184.0f}, ui::theme::Muted));
     m_pePriceInput.draw(rt());
     m_peTaxInput.draw(rt());
     m_peDiscountInput.draw(rt());
     m_peQtyInput.draw(rt());
-    rt().draw(makeText("Unit", 11, {272.0f, 238.0f}, ui::theme::Muted));
-    rt().draw(makeText("Category", 11, {424.0f, 238.0f}, ui::theme::Muted));
+    rt().draw(makeText("Unit", 11, {272.0f, 242.0f}, ui::theme::Muted));
+    rt().draw(makeText("Category", 11, {424.0f, 242.0f}, ui::theme::Muted));
     m_peUnitDrop.draw(rt());
     m_peCategoryDrop.draw(rt());
     m_peSaveBtn.draw(rt());
     m_peBarcodeBtn.draw(rt());
     if (!m_peMessage.empty())
-        rt().draw(makeText(m_peMessage, 12, {272.0f, 372.0f},
+        rt().draw(makeText(m_peMessage, 12, {272.0f, 376.0f},
             m_peMessage.find("saved") != std::string::npos
                 || m_peMessage.find("OK") != std::string::npos
                 ? ui::theme::Success : ui::theme::Error));
 
-    ui::theme::drawCard(rt(), {{246.0f, 396.0f}, {728.0f + rx, 228.0f}});
+    ui::theme::drawCard(rt(), {{246.0f, 396.0f}, {728.0f + rx, 244.0f}});
     rt().draw(makeText("Products (click to load into the form)", 15,
         {272.0f, 412.0f}, ui::theme::Heading));
     rt().draw(makeText("Id", 11, {272.0f, 440.0f}, ui::theme::Muted));
     rt().draw(makeText("Acronym", 11, {336.0f, 440.0f}, ui::theme::Muted));
     rt().draw(makeText("Name", 11, {436.0f, 440.0f}, ui::theme::Muted));
     rt().draw(makeText("Barcode", 11, {676.0f, 440.0f}, ui::theme::Muted));
-    float y = 464.0f;
+    float y = 458.0f;
     int shown = 0;
     for (const Product& p : m_productsCache)
     {
         if (shown >= 4) break;
-        ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 36.0f}, 8.0f, ui::theme::LightPanel);
+        const bool loaded = (p.id == m_peLoadedId);
+        ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 34.0f}, 8.0f,
+            loaded ? ui::theme::Active : ui::theme::LightPanel);
+        if (loaded)
+        {
+            sf::RectangleShape accent({4.0f, 22.0f});
+            accent.setPosition({262.0f, y + 6.0f});
+            accent.setFillColor(ui::theme::Primary);
+            rt().draw(accent);
+        }
         rt().draw(makeText(std::to_string(p.id), 13, {272.0f, y + 8.0f}, ui::theme::Text));
         rt().draw(makeText(p.acronym, 13, {336.0f, y + 8.0f}, ui::theme::Heading));
         rt().draw(makeText(truncFront(p.name, 28), 13, {436.0f, y + 8.0f}, ui::theme::Text));
         rt().draw(makeText(p.barcode, 13, {676.0f, y + 8.0f}, ui::theme::Text));
-        y += 40.0f;
+        y += 38.0f;
         ++shown;
     }
     if (m_productsCache.size() > 4)
         rt().draw(makeText("...and " + std::to_string(m_productsCache.size() - 4) +
-            " more - use Inventory to browse.", 11, {272.0f, 600.0f}, ui::theme::Muted));
+            " more - use Inventory to browse.", 11, {272.0f, 614.0f}, ui::theme::Muted));
 
     m_peUnitDrop.drawList(rt());
     m_peCategoryDrop.drawList(rt());
@@ -2246,7 +2237,7 @@ void BarcodeStudioGui::drawReports()
     rt().draw(makeText("Reports", 25, {kLeft, 26.0f}, ui::theme::Heading));
     m_reportBackBtn.draw(rt());
 
-    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 76.0f}});
+    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 88.0f}});
     rt().draw(makeText("Report", 15, {272.0f, 104.0f}, ui::theme::Heading));
     rt().draw(makeText("Custom From", 11, {584.0f, 104.0f}, ui::theme::Muted));
     rt().draw(makeText("Custom To", 11, {736.0f, 104.0f}, ui::theme::Muted));
@@ -2256,19 +2247,19 @@ void BarcodeStudioGui::drawReports()
     m_reportRunBtn.draw(rt());
     m_reportDrop.drawList(rt());
 
-    ui::theme::drawCard(rt(), {{246.0f, 180.0f}, {728.0f + rx, 420.0f}});
+    ui::theme::drawCard(rt(), {{246.0f, 192.0f}, {728.0f + rx, 408.0f}});
     if (m_reportTable.title.empty())
     {
-        rt().draw(makeText("Pick a report and press Run.", 15,
+        rt().draw(makeText("Pick a report to see it here.", 15,
             {330.0f, 360.0f}, ui::theme::Muted));
         return;
     }
-    rt().draw(makeText(m_reportTable.title, 15, {272.0f, 196.0f}, ui::theme::Heading));
-    drawReportTable({{262.0f, 226.0f}, {696.0f + rx, 320.0f}});
+    rt().draw(makeText(m_reportTable.title, 15, {272.0f, 208.0f}, ui::theme::Heading));
+    drawReportTable({{262.0f, 238.0f}, {696.0f + rx, 308.0f}});
     if (!m_reportTable.summary.empty())
         rt().draw(makeText(m_reportTable.summary, 12, {272.0f, 564.0f}, ui::theme::ActiveText));
     if (!m_reportMessage.empty())
-        rt().draw(makeText(m_reportMessage, 11, {272.0f, 580.0f}, ui::theme::Muted));
+        rt().draw(makeText(m_reportMessage, 11, {272.0f, 584.0f}, ui::theme::Muted));
     m_reportPrevBtn.draw(rt());
     m_reportNextBtn.draw(rt());
 }
@@ -2313,7 +2304,7 @@ void BarcodeStudioGui::drawHeldOrders()
     rt().draw(makeText("Held Orders", 25, {kLeft, 26.0f}, ui::theme::Heading));
     m_heldBackBtn.draw(rt());
 
-    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 448.0f}});
+    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 456.0f}});
     rt().draw(makeText("On-hold and in-progress orders", 15,
         {272.0f, 108.0f}, ui::theme::Heading));
     rt().draw(makeText("Order Id", 11, {272.0f, 138.0f}, ui::theme::Muted));
@@ -2334,6 +2325,13 @@ void BarcodeStudioGui::drawHeldOrders()
         const bool selected = (m_heldDrop.selected() == i);
         ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 40.0f}, 8.0f,
             selected ? ui::theme::Active : ui::theme::LightPanel);
+        if (selected)
+        {
+            sf::RectangleShape accent({4.0f, 28.0f});
+            accent.setPosition({262.0f, y + 6.0f});
+            accent.setFillColor(ui::theme::Primary);
+            rt().draw(accent);
+        }
         rt().draw(makeText(o.id, 13, {272.0f, y + 10.0f}, ui::theme::Heading));
         rt().draw(makeText(o.date, 13, {372.0f, y + 10.0f}, ui::theme::Text));
         rt().draw(makeText(truncFront(o.customerName, 24), 13, {472.0f, y + 10.0f}, ui::theme::Text));
@@ -2358,34 +2356,34 @@ void BarcodeStudioGui::drawOrderEdit()
     rt().draw(makeText("Edit Paid Order", 25, {kLeft, 26.0f}, ui::theme::Heading));
     m_oeBackBtn.draw(rt());
 
-    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 232.0f}});
+    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 240.0f}});
     rt().draw(makeText("Load Order", 15, {272.0f, 108.0f}, ui::theme::Heading));
-    rt().draw(makeText("Order Id (8 digits)", 11, {272.0f, 122.0f}, ui::theme::Muted));
-    rt().draw(makeText("Customer", 11, {272.0f, 180.0f}, ui::theme::Muted));
-    rt().draw(makeText("Contact", 11, {524.0f, 180.0f}, ui::theme::Muted));
+    rt().draw(makeText("Order Id (8 digits)", 11, {272.0f, 132.0f}, ui::theme::Muted));
+    rt().draw(makeText("Customer", 11, {272.0f, 190.0f}, ui::theme::Muted));
+    rt().draw(makeText("Contact", 11, {524.0f, 190.0f}, ui::theme::Muted));
     m_oeOrderIdInput.draw(rt());
     m_oeCustomerInput.draw(rt());
     m_oeContactInput.draw(rt());
     m_oeLoadBtn.draw(rt());
-    drawManagerPill({{272.0f, 248.0f}, {200.0f, 28.0f}},
+    drawManagerPill({{676.0f, 272.0f}, {200.0f, 28.0f}},
         m_oeManagerApproved ? "Approved" : "Awaiting Approval",
         m_oeManagerApproved);
     m_oeApproveBtn.draw(rt());
     m_oeSaveBtn.draw(rt());
     if (!m_oeMessage.empty())
-        rt().draw(makeText(m_oeMessage, 12, {272.0f, 302.0f},
+        rt().draw(makeText(m_oeMessage, 12, {272.0f, 312.0f},
             m_oeMessage.find("Error") == std::string::npos
                 && m_oeMessage.find("Cannot") == std::string::npos
                 ? ui::theme::Success : ui::theme::Error));
 
-    ui::theme::drawCard(rt(), {{246.0f, 336.0f}, {728.0f + rx, 288.0f}});
-    rt().draw(makeText("Order Lines", 15, {272.0f, 352.0f}, ui::theme::Heading));
-    rt().draw(makeText("Acronym", 11, {272.0f, 380.0f}, ui::theme::Muted));
-    rt().draw(makeText("Name", 11, {366.0f, 380.0f}, ui::theme::Muted));
-    rt().draw(makeText("Qty", 11, {676.0f, 380.0f}, ui::theme::Muted));
-    float y = 404.0f;
+    ui::theme::drawCard(rt(), {{246.0f, 344.0f}, {728.0f + rx, 280.0f}});
+    rt().draw(makeText("Order Lines", 15, {272.0f, 360.0f}, ui::theme::Heading));
+    rt().draw(makeText("Acronym", 11, {272.0f, 388.0f}, ui::theme::Muted));
+    rt().draw(makeText("Name", 11, {366.0f, 388.0f}, ui::theme::Muted));
+    rt().draw(makeText("Qty", 11, {676.0f, 388.0f}, ui::theme::Muted));
+    float y = 412.0f;
     if (m_oeLines.empty())
-        rt().draw(makeText("Load an order to see its lines.", 13, {272.0f, 420.0f}, ui::theme::Muted));
+        rt().draw(makeText("Load an order to see its lines.", 13, {272.0f, 428.0f}, ui::theme::Muted));
     for (const auto& p : m_oeLines)
     {
         ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 40.0f}, 8.0f, ui::theme::LightPanel);
@@ -2403,13 +2401,13 @@ void BarcodeStudioGui::drawBillPrint()
 {
     const float rx = m_w - 1000.0f;
     rt().draw(makeText("Bill", 25, {kLeft, 26.0f}, ui::theme::Heading));
-    m_printCloseBtn.draw(rt());
     const Bill& b = m_lastBill.bill;
     if (b.id.empty())
     {
-        ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 484.0f}});
+        ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 448.0f}});
         rt().draw(makeText("No bill to show yet. Generate one from the POS screen.",
             15, {300.0f, 300.0f}, ui::theme::Muted));
+        m_printCloseBtn.draw(rt());
         return;
     }
     ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {728.0f + rx, 448.0f}});
@@ -2433,16 +2431,17 @@ void BarcodeStudioGui::drawBillPrint()
         y += 30.0f;
         if (y > 300.0f) break;
     }
-    rt().draw(makeText("Subtotal: " + pkr(b.totalWithoutTax), 12, {272.0f, 316.0f}, ui::theme::Text));
-    rt().draw(makeText("Tax: " + pkr(b.totalTax), 12, {272.0f, 334.0f}, ui::theme::Text));
-    rt().draw(makeText("Discount: -" + pkr(b.totalDiscount), 12, {272.0f, 352.0f}, ui::theme::Text));
-    rt().draw(makeText("Seasonal: -" + pkr(b.seasonalDiscount), 12, {272.0f, 370.0f}, ui::theme::Text));
-    rt().draw(makeText("Special: -" + pkr(b.specialDiscount), 12, {272.0f, 388.0f}, ui::theme::Text));
-    rt().draw(makeText("Payable: " + pkr(b.totalPayable), 15, {272.0f, 412.0f}, ui::theme::ActiveText));
-    rt().draw(makeText("Received: " + pkr(b.amountReceived), 12, {500.0f, 316.0f}, ui::theme::Text));
-    rt().draw(makeText("Balance: " + pkr(b.balanceReturned), 12, {500.0f, 334.0f}, ui::theme::Text));
-    rt().draw(makeText("Status: " + b.paymentStatus, 12, {500.0f, 352.0f}, ui::theme::Text));
+    rt().draw(makeText("Subtotal: " + pkr(b.totalWithoutTax), 12, {272.0f, 330.0f}, ui::theme::Text));
+    rt().draw(makeText("Tax: " + pkr(b.totalTax), 12, {272.0f, 348.0f}, ui::theme::Text));
+    rt().draw(makeText("Discount: -" + pkr(b.totalDiscount), 12, {272.0f, 366.0f}, ui::theme::Text));
+    rt().draw(makeText("Seasonal: -" + pkr(b.seasonalDiscount), 12, {272.0f, 384.0f}, ui::theme::Text));
+    rt().draw(makeText("Special: -" + pkr(b.specialDiscount), 12, {272.0f, 402.0f}, ui::theme::Text));
+    rt().draw(makeText("Payable: " + pkr(b.totalPayable), 15, {272.0f, 426.0f}, ui::theme::ActiveText));
+    rt().draw(makeText("Received: " + pkr(b.amountReceived), 12, {500.0f, 330.0f}, ui::theme::Text));
+    rt().draw(makeText("Balance: " + pkr(b.balanceReturned), 12, {500.0f, 348.0f}, ui::theme::Text));
+    rt().draw(makeText("Status: " + b.paymentStatus, 12, {500.0f, 366.0f}, ui::theme::Text));
     m_printPdfBtn.draw(rt());
+    m_printCloseBtn.draw(rt());
     if (!m_printMessage.empty())
         rt().draw(makeText(m_printMessage, 12, {272.0f, 616.0f},
             m_printMessage.find("saved") != std::string::npos
@@ -2569,6 +2568,7 @@ void BarcodeStudioGui::productEditLoad()
             if (m_categoriesCache[i].id == p.categoryId)
             { m_peCategoryDrop.setSelected(static_cast<int>(i)); break; }
         m_peGeneratedBarcode = p.barcode;
+        m_peLoadedId = p.id;
         m_peMessage = "Loaded product " + std::to_string(p.id) + ".";
         return;
     }
@@ -2619,10 +2619,25 @@ void BarcodeStudioGui::productEditSave()
     if (err == "bad-barcode") { m_peMessage = "That barcode is already used."; return; }
     if (err == "bad-fields") { m_peMessage = "Name and acronym are required."; return; }
     if (err == "write-failed") { m_peMessage = "Could not save product.txt."; return; }
+    m_peLoadedId = p.id;
     m_peMessage = exists ? "Product saved." : "Product added.";
     refreshInventory();
     refreshProducts();
+    // The saved product's barcode image must actually exist, or the
+    // product can never be scanned from its file. (The service keeps
+    // the old barcode when the category is unchanged and generates a
+    // new one otherwise - either way, trust the reloaded product.)
     m_peGeneratedBarcode = p.barcode;
+    for (const Product& saved : m_productsCache)
+    {
+        if (saved.id != p.id) continue;
+        m_peGeneratedBarcode = saved.barcode;
+        const std::string bmpPath = productBmpPath(saved.barcodeFile,
+            m_productService.productFilePath());
+        if (!saved.barcode.empty() && !std::filesystem::exists(bmpPath))
+            saveBMP(renderBarcode(saved.barcode), bmpPath);
+        break;
+    }
     celebrate(exists ? "Product saved!" : "Product added!", {610.0f, 320.0f});
 }
 
@@ -2645,9 +2660,15 @@ void BarcodeStudioGui::runReport()
     else if (sel == "completed") m_reportTable = m_reportService.completedOrders();
     else if (sel == "daily" || sel == "weekly" || sel == "monthly"
         || sel == "yearly" || sel == "custom")
+    {
+        if (sel == "custom"
+            && (!datetime::isValidDate(trimStr(m_reportFromInput.getText()))
+                || !datetime::isValidDate(trimStr(m_reportToInput.getText()))))
+        { m_reportMessage = "Dates must be YYYY-MM-DD."; return; }
         m_reportTable = m_reportService.cashSales(sel,
             trimStr(m_reportFromInput.getText()),
             trimStr(m_reportToInput.getText()));
+    }
     else if (sel == "sales_discounts") m_reportTable = m_reportService.allSalesWithDiscounts();
     else if (sel == "top_sold") m_reportTable = m_reportService.topTenSoldItems();
     else if (sel == "top_stock") m_reportTable = m_reportService.topTenRemainingStock();
@@ -2673,6 +2694,21 @@ void BarcodeStudioGui::refreshHeldOrders()
         m_heldScroll = std::max(0, static_cast<int>(m_heldCache.size()) - 8);
 }
 
+void BarcodeStudioGui::applyResumedHeader(const Order& o)
+{
+    // A resumed order brings its customer and payment details back
+    // with it, so the bill can be generated without re-typing.
+    m_posCustomer.setText(o.customerName);
+    m_posContact.setText(o.customerContact == "-" ? "" : o.customerContact);
+    for (std::size_t i = 0; i < kPayModes.size(); ++i)
+        if (kPayModes[i] == o.paymentMode) { m_modeDrop.setSelected(static_cast<int>(i)); break; }
+    const std::vector<std::string> merchants = merchantOptionsFor(o.paymentMode);
+    m_merchantDrop.setOptions(merchants);
+    m_merchantDrop.setSelected(0);
+    for (std::size_t i = 0; i < merchants.size(); ++i)
+        if (merchants[i] == o.paymentMerchant) { m_merchantDrop.setSelected(static_cast<int>(i)); break; }
+}
+
 void BarcodeStudioGui::heldResumeSelected()
 {
     const int idx = m_heldDrop.selected();
@@ -2684,6 +2720,7 @@ void BarcodeStudioGui::heldResumeSelected()
     if (err == "not-found") { m_heldScreenMessage = "Could not find that order."; return; }
     if (err == "wrong-status")
     { m_heldScreenMessage = "That order is not on-hold any more."; return; }
+    applyResumedHeader(m_heldCache[static_cast<std::size_t>(idx)]);
     m_heldScreenMessage = "Resumed order " + orderId + ".";
     switchView(View::PosOrder);
     m_posBarcode.setFocused(true);
@@ -2716,12 +2753,12 @@ void BarcodeStudioGui::orderEditLoad()
     const std::string id = trimStr(m_oeOrderIdInput.getText());
     if (id.empty()) { m_oeMessage = "Enter the order id first."; return; }
     CompletedBill out;
-    const std::string gate = m_orderService.editPaidOrder(id,
-        m_oeManagerApproved, out);
-    if (gate == "not-approved") { m_oeMessage = "Manager approval is required."; return; }
+    const std::string gate = m_orderService.loadPaidOrder(id, out);
     if (gate == "not-found") { m_oeMessage = "No such order."; return; }
     if (gate == "wrong-status") { m_oeMessage = "Only paid orders can be edited."; return; }
     if (gate == "too-old") { m_oeMessage = "More than 7 days have passed."; return; }
+    m_oeLoadedId = id;
+    m_oeManagerApproved = false;  // each loaded order needs its own approval
     m_oeCustomerInput.setText(out.order.customerName);
     m_oeContactInput.setText(out.order.customerContact);
     m_oeLines.clear();
@@ -2730,27 +2767,33 @@ void BarcodeStudioGui::orderEditLoad()
         const auto p = m_productService.findByBarcode(d.productBarcode);
         if (p) m_oeLines.push_back({*p, d.quantity});
     }
-    m_oeMessage = "Loaded order " + id + ".";
+    m_oeMessage = "Loaded order " + id + ". A manager must approve before saving.";
 }
 
 void BarcodeStudioGui::orderEditApprove()
 {
     if (m_role != UserRole::Manager)
     { m_oeMessage = "Only a manager can approve."; return; }
+    if (m_oeLoadedId.empty())
+    { m_oeMessage = "Load an order first, then approve it."; return; }
     m_oeManagerApproved = true;
-    m_oeMessage = "Manager approved. You may now Save.";
+    m_oeMessage = "Manager approved order " + m_oeLoadedId + ". You may now Save.";
 }
 
 void BarcodeStudioGui::orderEditSave()
 {
+    if (m_oeLoadedId.empty()) { m_oeMessage = "Load an order first."; return; }
     if (!m_oeManagerApproved) { m_oeMessage = "Manager approval is required first."; return; }
-    const std::string id = trimStr(m_oeOrderIdInput.getText());
-    if (id.empty() || m_oeLines.empty()) { m_oeMessage = "Load an order first."; return; }
+    if (m_oeLines.empty()) { m_oeMessage = "The order has no lines left."; return; }
+    const std::string contact = trimStr(m_oeContactInput.getText());
+    if (!contact.empty() && !stringutils::isValidPhone(contact))
+    { m_oeMessage = "Contact number must be exactly 11 digits."; return; }
+    const std::string id = m_oeLoadedId;  // save the LOADED order, whatever the id box says now
     std::vector<CartLine> lines;
     for (const auto& row : m_oeLines) lines.push_back({row.first, row.second});
     CompletedBill out;
     const std::string err = m_orderService.saveEditedPaidOrder(id,
-        trimStr(m_oeCustomerInput.getText()), trimStr(m_oeContactInput.getText()),
+        trimStr(m_oeCustomerInput.getText()), contact,
         lines, m_oeManagerApproved, out);
     if (err == "not-approved") { m_oeMessage = "Manager approval is required first."; return; }
     if (err == "not-found") { m_oeMessage = "No such order."; return; }
@@ -2759,8 +2802,10 @@ void BarcodeStudioGui::orderEditSave()
     if (err == "no-customer") { m_oeMessage = "Customer name is required."; return; }
     if (err == "low-stock") { m_oeMessage = "Not enough stock for one of the lines."; return; }
     if (err == "write-failed") { m_oeMessage = "Could not save the changes."; return; }
+    if (err == "empty-order") { m_oeMessage = "The order has no lines left."; return; }
+    if (!err.empty()) { m_oeMessage = "Could not save the changes."; return; }
     m_lastBill = out;
-    m_showBill = true;
+    m_oeManagerApproved = false;  // the approval is spent
     refreshProducts();
     m_oeMessage = "Order " + id + " updated. Bill " + out.bill.id + " re-issued.";
 }
@@ -2770,10 +2815,13 @@ void BarcodeStudioGui::posHold()
     if (m_orderService.empty()) { m_posMessage = "Nothing to hold."; m_posMessageOk = false; return; }
     if (trimStr(m_posCustomer.getText()).empty())
     { m_posMessage = "Enter the customer name first."; m_posMessageOk = false; return; }
+    const std::string contact = trimStr(m_posContact.getText());
+    if (!contact.empty() && !stringutils::isValidPhone(contact))
+    { m_posMessage = "Contact number must be exactly 11 digits."; m_posMessageOk = false; return; }
     std::string merchant = m_merchantDrop.selectedText();
     if (merchant == "-") merchant.clear();
     const std::string err = m_orderService.holdOrder(
-        trimStr(m_posCustomer.getText()), trimStr(m_posContact.getText()),
+        trimStr(m_posCustomer.getText()), contact,
         kPayModes[static_cast<std::size_t>(m_modeDrop.selected())], merchant);
     if (err == "empty-order") { m_posMessage = "Nothing to hold."; m_posMessageOk = false; return; }
     if (err == "no-customer") { m_posMessage = "Enter the customer name first."; m_posMessageOk = false; return; }
@@ -2793,7 +2841,9 @@ void BarcodeStudioGui::posResume()
     const std::string err = m_orderService.resumeOrder(m_heldIds[static_cast<std::size_t>(idx)]);
     if (err == "not-found") { m_posMessage = "Could not load that held order."; m_posMessageOk = false; return; }
     if (err == "wrong-status") { m_posMessage = "That order is no longer on-hold."; m_posMessageOk = false; return; }
-    m_posMessage = "Order resumed.";
+    if (idx < static_cast<int>(m_heldCache.size()))
+        applyResumedHeader(m_heldCache[static_cast<std::size_t>(idx)]);
+    m_posMessage = "Order resumed - customer details restored.";
     m_posMessageOk = true;
     refreshHeldOrders();
 }
@@ -2831,7 +2881,7 @@ void BarcodeStudioGui::refreshProducts()
     m_categoryRepo = CategoryFileRepository();
     m_seasonsRepo = SeasonsFileRepository();
     m_productsCache = m_productService.listAll();
-    const int maxScroll = std::max(0, static_cast<int>(m_productsCache.size()) - 8);
+    const int maxScroll = std::max(0, static_cast<int>(m_productsCache.size()) - 6);
     m_productsScroll = std::min(m_productsScroll, maxScroll);
 }
 
@@ -2840,12 +2890,13 @@ void BarcodeStudioGui::posDescribe()
     const std::string barcode = trimmed(m_posBarcode.getText());
     if (barcode.empty())
     {
-        m_posMessage = "Type or scan a barcode first, then press Description.";
+        m_posMessage = "Type or scan a barcode first.";
         m_posMessageOk = false;
         return;
     }
     const auto product = m_productService.findByBarcode(barcode);
     m_lastScannedCode = barcode;
+    m_autoDescCode = barcode;
     if (!product)
     {
         m_descProduct.reset();
@@ -2859,9 +2910,69 @@ void BarcodeStudioGui::posDescribe()
     m_posMessageOk = true;
 }
 
+bool BarcodeStudioGui::onEnterKey()
+{
+    // Enter does what the screen's main button does, wherever a text
+    // box has focus - the keyboard twin of the click paths (DRY: the
+    // very same action functions are called, nothing is duplicated).
+    switch (m_view)
+    {
+    case View::Generator:
+        if (m_generate.isEnabled()) generateBarcode();
+        else
+        {
+            m_shake = 0.4f;
+            showToast("Enter exactly 6 digits (first digit 1-9).", false);
+        }
+        return true;
+    case View::FileScanner:
+        decodeFile();
+        return true;
+    case View::CameraScanner:
+        if (m_scanLocked) { resetScan(); return true; }
+        break;
+    case View::SelfTest:
+        runSelfTest();
+        return true;
+    case View::PosOrder:
+        if (m_showBill) break;
+        if (m_posBarcode.isFocused()) { posAdd(); return true; }
+        if (m_posQty.isFocused())
+        { m_posQty.setFocused(false); posAdd(); return true; }
+        if (m_posAmount.isFocused())
+        { m_posAmount.setFocused(false); posCheckout(); return true; }
+        break;
+    case View::Categories:
+        if (m_catIdInput.isFocused() || m_catNameInput.isFocused()
+            || m_catAcronymInput.isFocused()) { categoryAdd(); return true; }
+        break;
+    case View::Seasons:
+        if (m_seasonStartInput.isFocused() || m_seasonEndInput.isFocused()
+            || m_seasonPctInput.isFocused()) { seasonAdd(); return true; }
+        break;
+    case View::Inventory:
+        if (m_invQtyInput.isFocused()) { inventorySet(); return true; }
+        break;
+    case View::ProductEdit:
+        if (m_peIdInput.isFocused()) { productEditLoad(); return true; }
+        break;
+    case View::Reports:
+        if (m_reportFromInput.isFocused() || m_reportToInput.isFocused())
+        { runReport(); return true; }
+        break;
+    case View::OrderEdit:
+        if (m_oeOrderIdInput.isFocused()) { orderEditLoad(); return true; }
+        break;
+    default:
+        break;
+    }
+    return false;
+}
+
 void BarcodeStudioGui::posAdd()
 {
     const std::string barcode = trimmed(m_posBarcode.getText());
+    m_autoDescCode = barcode;
     const int qty = parseQty(trimmed(m_posQty.getText()));
     const std::string err = m_orderService.addLine(barcode, qty);
     if (err == "not-found")
@@ -2941,8 +3052,6 @@ void BarcodeStudioGui::addDecodedToOrder()
     if (m_decoded.empty() || !m_descProduct) return;
     if (!posAddOne(m_decoded))
     {
-        m_mascotText = "Couldn't add that -\nnot enough stock!";
-        m_mascotHappy = 1.5f;
         return;
     }
     switchView(View::PosOrder);
@@ -3063,7 +3172,7 @@ void BarcodeStudioGui::drawPosCameraCard(const sf::FloatRect& card)
     ui::theme::drawStatus(rt(), m_font, {card.position.x + card.size.x - 76.0f, card.position.y + 12.0f},
         {56.0f, 22.0f}, "LIVE", true);
     const sf::FloatRect video({card.position.x + 12.0f, card.position.y + 42.0f},
-        {card.size.x - 24.0f, 96.0f});
+        {card.size.x - 24.0f, 88.0f});
     sf::RectangleShape videoBg(video.size);
     videoBg.setPosition(video.position);
     videoBg.setFillColor(sf::Color(24, 16, 22));
@@ -3075,8 +3184,8 @@ void BarcodeStudioGui::drawPosCameraCard(const sf::FloatRect& card)
         if (s.x > 0 && s.y > 0)
         {
             const float scale = std::min(video.size.x / s.x, video.size.y / s.y);
-            camSprite.setScale({scale, scale});
-            camSprite.setPosition({video.position.x + (video.size.x - s.x * scale) / 2.0f,
+            camSprite.setScale({-scale, scale});  // mirrored preview (selfie view)
+            camSprite.setPosition({video.position.x + (video.size.x + s.x * scale) / 2.0f,
                 video.position.y + (video.size.y - s.y * scale) / 2.0f});
             rt().draw(camSprite);
         }
@@ -3088,13 +3197,13 @@ void BarcodeStudioGui::drawPosCameraCard(const sf::FloatRect& card)
     }
     if (m_descProduct)
         rt().draw(makeText("Last scanned: " + truncFront(m_descProduct->name, 18) + " - " +
-            pkr(m_descProduct->unitPrice), 11, {x, card.position.y + 148.0f}, ui::theme::ActiveText));
+            pkr(m_descProduct->unitPrice), 11, {x, card.position.y + 136.0f}, ui::theme::ActiveText));
     else if (!m_lastScannedCode.empty())
         rt().draw(makeText("Scanned " + m_lastScannedCode + " - no product found",
-            11, {x, card.position.y + 148.0f}, ui::theme::Error));
+            11, {x, card.position.y + 136.0f}, ui::theme::Error));
     else
         rt().draw(makeText("Point a barcode at the camera.", 11,
-            {x, card.position.y + 148.0f}, ui::theme::Muted));
+            {x, card.position.y + 136.0f}, ui::theme::Muted));
 }
 
 void BarcodeStudioGui::drawDescriptionCard(const sf::FloatRect& card)
@@ -3104,20 +3213,20 @@ void BarcodeStudioGui::drawDescriptionCard(const sf::FloatRect& card)
     rt().draw(makeText("Product Description", 15, {x, card.position.y + 16.0f}, ui::theme::Heading));
     if (!m_descProduct)
     {
-        rt().draw(makeText("No product selected yet.\nScan a barcode with the\ncamera, type one and press\nDescription, or add an item.",
+        rt().draw(makeText("No product selected yet.\nScan a barcode with the\ncamera or type one - its\ndescription appears here.",
             12, {x, card.position.y + 52.0f}, ui::theme::Muted));
         return;
     }
     const Product& p = *m_descProduct;
-    rt().draw(makeText(truncFront(p.name, 24), 16, {x, card.position.y + 46.0f}, ui::theme::ActiveText));
+    rt().draw(makeText(truncFront(p.name, 24), 16, {x, card.position.y + 42.0f}, ui::theme::ActiveText));
     rt().draw(makeText("ID " + std::to_string(p.id) + "  -  " + p.acronym + "  -  " + p.barcode,
-        11, {x, card.position.y + 74.0f}, ui::theme::Muted));
+        11, {x, card.position.y + 66.0f}, ui::theme::Muted));
     rt().draw(makeText("Price: " + pkr(p.unitPrice) + " / " + p.unit, 12,
-        {x, card.position.y + 98.0f}, ui::theme::Text));
+        {x, card.position.y + 86.0f}, ui::theme::Text));
     rt().draw(makeText("Tax " + pkr(p.taxPerUnit) + "  -  Discount " + pkr(p.discountPerUnit),
-        12, {x, card.position.y + 120.0f}, ui::theme::Text));
+        12, {x, card.position.y + 106.0f}, ui::theme::Text));
     rt().draw(makeText("Stock available: " + std::to_string(p.availableQuantity), 12,
-        {x, card.position.y + 142.0f},
+        {x, card.position.y + 126.0f},
         p.availableQuantity > 0 ? ui::theme::Success : ui::theme::Error));
 }
 
@@ -3131,41 +3240,40 @@ void BarcodeStudioGui::drawPosOrder()
     // against the window's right edge.
     const float cx = 690.0f + rx;  // right column x (anchored to the window's right edge)
     // --- entry card
-    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {432.0f + rx, 178.0f}});
-    rt().draw(makeText("Scan / Enter Barcode", 15, {272.0f, 108.0f}, ui::theme::Heading));
-    rt().draw(makeText("Qty", 12, {502.0f, 114.0f}, ui::theme::Muted));
+    ui::theme::drawCard(rt(), {{246.0f, 92.0f}, {432.0f + rx, 156.0f}});
+    rt().draw(makeText("Scan / Enter Barcode", 15, {272.0f, 102.0f}, ui::theme::Heading));
+    rt().draw(makeText("Qty", 12, {502.0f, 108.0f}, ui::theme::Muted));
     m_posBarcode.setSize({218.0f, 42.0f});
-    m_posQty.setPosition({502.0f, 136.0f});
+    m_posQty.setPosition({502.0f, 126.0f});
     rt().draw(makeText(m_cameraRunning ? "Camera: LIVE" : "Camera is off",
-        11, {570.0f + rx, 112.0f}, m_cameraRunning ? ui::theme::Success : ui::theme::Muted));
-    m_posCamBtn.setPosition({570.0f + rx, 136.0f});
+        11, {570.0f + rx, 106.0f}, m_cameraRunning ? ui::theme::Success : ui::theme::Muted));
+    m_posCamBtn.setPosition({570.0f + rx, 126.0f});
     m_posBarcode.draw(rt());
     m_posQty.draw(rt());
     m_posCamBtn.draw(rt());
-    m_posDescBtn.draw(rt());
     m_posAddBtn.draw(rt());
-    rt().draw(makeText(shorten(m_posMessage, 74), 12, {272.0f, 246.0f},
+    rt().draw(makeText(shorten(m_posMessage, 74), 12, {272.0f, 228.0f},
         m_posMessageOk ? ui::theme::Success : ui::theme::Error));
 
     // --- description card (requirement: Description button / scan to view)
-    if (m_cameraRunning) drawPosCameraCard({{cx, 92.0f}, {284.0f, 178.0f}});
-    else drawDescriptionCard({{cx, 92.0f}, {284.0f, 178.0f}});
+    if (m_cameraRunning) drawPosCameraCard({{cx, 92.0f}, {284.0f, 156.0f}});
+    else drawDescriptionCard({{cx, 92.0f}, {284.0f, 156.0f}});
 
     // --- cart card
-    ui::theme::drawCard(rt(), {{246.0f, 282.0f}, {432.0f + rx, 342.0f}});
-    rt().draw(makeText("Order Items", 15, {272.0f, 300.0f}, ui::theme::Heading));
-    rt().draw(makeText("Product", 11, {272.0f, 330.0f}, ui::theme::Muted));
-    rt().draw(makeText("Qty", 11, {545.0f, 330.0f}, ui::theme::Muted));
-    rt().draw(makeText("Line Total", 11, {582.0f + rx, 330.0f}, ui::theme::Muted));
+    ui::theme::drawCard(rt(), {{246.0f, 254.0f}, {432.0f + rx, 258.0f}});
+    rt().draw(makeText("Order Items", 15, {272.0f, 270.0f}, ui::theme::Heading));
+    rt().draw(makeText("Product", 11, {272.0f, 302.0f}, ui::theme::Muted));
+    rt().draw(makeText("Qty", 11, {545.0f, 302.0f}, ui::theme::Muted));
+    rt().draw(makeText("Line Total", 11, {582.0f + rx, 302.0f}, ui::theme::Muted));
     const auto& lines = m_orderService.lines();
     if (lines.empty())
         rt().draw(makeText("The order is empty - scan or add the first product.", 13,
-            {290.0f, 420.0f}, ui::theme::Muted));
+            {290.0f, 400.0f}, ui::theme::Muted));
     const std::size_t shown = std::min<std::size_t>(lines.size(), 4);
     for (std::size_t i = 0; i < shown; ++i)
     {
         const CartLine& line = lines[i];
-        const float ry = 352.0f + static_cast<float>(i) * 48.0f;
+        const float ry = 324.0f + static_cast<float>(i) * 45.0f;
         ui::theme::drawRoundedBox(rt(), {262.0f, ry + 4.0f}, {400.0f + rx, 40.0f}, 10.0f, ui::theme::LightPanel);
         rt().draw(makeText(line.product.acronym, 13, {272.0f, ry + 15.0f}, ui::theme::Heading));
         rt().draw(makeText(truncFront(line.product.name, 18), 12, {350.0f, ry + 16.0f}, ui::theme::Text));
@@ -3179,43 +3287,57 @@ void BarcodeStudioGui::drawPosOrder()
     }
     if (lines.size() > shown)
         rt().draw(makeText("...and " + std::to_string(lines.size() - shown) + " more line(s) - all included in the bill.",
-            11, {272.0f, 548.0f}, ui::theme::Muted));
+            11, {272.0f, 522.0f}, ui::theme::Muted));
     m_posBillBtn.draw(rt());
     m_posNewBtn.draw(rt());
     m_posHoldBtn.draw(rt());
     m_posResumeBtn.draw(rt());
     m_heldDrop.draw(rt());
     m_heldDrop.drawList(rt());
-    rt().draw(makeText(std::to_string(lines.size()) + " line(s)", 11, {624.0f + rx, 654.0f}, ui::theme::Muted));
+    rt().draw(makeText(std::to_string(lines.size()) + " line(s)", 11, {596.0f + rx, 273.0f}, ui::theme::Muted));
 
     // --- customer & payment card
-    m_posCustomer.setPosition({cx + 20.0f, 332.0f});
+    // (These widgets were positioned here but never drawn, so the
+    // whole customer section was invisible - fixed.)
+    ui::theme::drawCard(rt(), {{cx, 254.0f}, {284.0f, 300.0f}});
+    rt().draw(makeText("Customer & Payment", 15, {cx + 20.0f, 268.0f}, ui::theme::Heading));
+    rt().draw(makeText("Customer Name", 11, {cx + 20.0f, 290.0f}, ui::theme::Muted));
+    m_posCustomer.setPosition({cx + 20.0f, 304.0f});
     m_posCustomer.setSize({244.0f, 34.0f});
-    m_posContact.setPosition({cx + 20.0f, 394.0f});
+    m_posCustomer.draw(rt());
+    rt().draw(makeText("Contact (11 digits)", 11, {cx + 20.0f, 348.0f}, ui::theme::Muted));
+    m_posContact.setPosition({cx + 20.0f, 366.0f});
     m_posContact.setSize({244.0f, 34.0f});
-    m_modeDrop.setPosition({cx + 20.0f, 444.0f});
+    m_posContact.draw(rt());
+    rt().draw(makeText("Mode", 11, {cx + 20.0f, 400.0f}, ui::theme::Muted));
+    rt().draw(makeText("Status", 11, {cx + 144.0f, 400.0f}, ui::theme::Muted));
+    m_modeDrop.setPosition({cx + 20.0f, 416.0f});
     m_modeDrop.setSize({112.0f, 28.0f});
-    m_statusDrop.setPosition({cx + 144.0f, 444.0f});
+    m_modeDrop.draw(rt());
+    m_statusDrop.setPosition({cx + 144.0f, 416.0f});
     m_statusDrop.setSize({120.0f, 28.0f});
-    m_merchantDrop.setPosition({cx + 20.0f, 494.0f});
+    m_statusDrop.draw(rt());
+    rt().draw(makeText("Merchant", 11, {cx + 20.0f, 450.0f}, ui::theme::Muted));
+    m_merchantDrop.setPosition({cx + 20.0f, 466.0f});
     m_merchantDrop.setSize({244.0f, 28.0f});
-    rt().draw(makeText("Special % (max 8)", 11, {cx + 20.0f, 532.0f}, ui::theme::Muted));
-    rt().draw(makeText("Amount received", 11, {cx + 144.0f, 532.0f}, ui::theme::Muted));
-    m_posSpecialPct.setPosition({cx + 20.0f, 546.0f});
+    m_merchantDrop.draw(rt());
+    rt().draw(makeText("Special % (max 8)", 11, {cx + 20.0f, 504.0f}, ui::theme::Muted));
+    rt().draw(makeText("Amount received", 11, {cx + 144.0f, 504.0f}, ui::theme::Muted));
+    m_posSpecialPct.setPosition({cx + 20.0f, 518.0f});
     m_posSpecialPct.setSize({112.0f, 28.0f});
-    m_posAmount.setPosition({cx + 144.0f, 546.0f});
+    m_posAmount.setPosition({cx + 144.0f, 518.0f});
     m_posAmount.setSize({120.0f, 28.0f});
     m_posSpecialPct.draw(rt());
     m_posAmount.draw(rt());
 
     // --- totals card
-    ui::theme::drawCard(rt(), {{cx, 584.0f}, {284.0f, 116.0f}});
+    ui::theme::drawCard(rt(), {{cx, 566.0f}, {284.0f, 96.0f}});
     const Totals t = m_orderService.totals();
-    rt().draw(makeText("Subtotal (no tax): " + pkr(t.withoutTax), 12, {cx + 20.0f, 598.0f}, ui::theme::Text));
-    rt().draw(makeText("Tax: " + pkr(t.tax), 12, {cx + 20.0f, 618.0f}, ui::theme::Text));
-    rt().draw(makeText("Discount: -" + pkr(t.discount), 12, {cx + 20.0f, 638.0f}, ui::theme::Text));
-    rt().draw(makeText("PAYABLE", 12, {cx + 20.0f, 662.0f}, ui::theme::Muted));
-    rt().draw(makeText(pkr(t.payable), 17, {cx + 170.0f, 656.0f}, ui::theme::ActiveText));
+    rt().draw(makeText("Subtotal (no tax): " + pkr(t.withoutTax), 12, {cx + 20.0f, 580.0f}, ui::theme::Text));
+    rt().draw(makeText("Tax: " + pkr(t.tax), 12, {cx + 20.0f, 598.0f}, ui::theme::Text));
+    rt().draw(makeText("Discount: -" + pkr(t.discount), 12, {cx + 20.0f, 616.0f}, ui::theme::Text));
+    rt().draw(makeText("PAYABLE", 12, {cx + 20.0f, 640.0f}, ui::theme::Muted));
+    rt().draw(makeText(pkr(t.payable), 17, {cx + 170.0f, 633.0f}, ui::theme::ActiveText));
 
     // Open drop-down lists draw last, on top of the cards.
     m_modeDrop.drawList(rt());
@@ -3244,34 +3366,34 @@ void BarcodeStudioGui::drawProducts()
         rt().draw(makeText("No products found - Data/product.txt is missing or empty.", 14,
             {300.0f, 320.0f}, ui::theme::Error));
     }
-    // Scrollable window of 8 rows over the full list (mouse wheel).
+    // Scrollable window of 6 rows over the full list (mouse wheel).
     const int total = static_cast<int>(m_productsCache.size());
-    const int maxScroll = std::max(0, total - 8);
+    const int maxScroll = std::max(0, total - 6);
     const int first = std::min(m_productsScroll, maxScroll);
-    const int last = std::min(total, first + 8);
+    const int last = std::min(total, first + 6);
     float y = 140.0f;
     for (int pi = first; pi < last; ++pi)
     {
         const Product& p = m_productsCache[static_cast<std::size_t>(pi)];
-        ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 48.0f}, 10.0f, ui::theme::LightPanel);
-        rt().draw(makeText(std::to_string(p.id), 13, {272.0f, y + 8.0f}, ui::theme::Text));
-        rt().draw(makeText(p.barcode, 13, {316.0f, y + 8.0f}, ui::theme::Text));
-        rt().draw(makeText(p.acronym, 13, {396.0f, y + 8.0f}, ui::theme::Heading));
-        rt().draw(makeText(truncFront(p.name, 20), 13, {486.0f, y + 8.0f}, ui::theme::Text));
-        rt().draw(makeText(p.unit, 12, {648.0f, y + 8.0f}, ui::theme::Text));
-        rt().draw(makeText(stringutils::money(p.unitPrice), 13, {712.0f, y + 8.0f}, ui::theme::Text));
-        ui::theme::drawStatus(rt(), m_font, {856.0f + rx, y + 9.0f}, {84.0f, 26.0f},
+        ui::theme::drawRoundedBox(rt(), {262.0f, y}, {696.0f + rx, 58.0f}, 10.0f, ui::theme::LightPanel);
+        rt().draw(makeText(std::to_string(p.id), 13, {272.0f, y + 11.0f}, ui::theme::Text));
+        rt().draw(makeText(p.barcode, 13, {316.0f, y + 11.0f}, ui::theme::Text));
+        rt().draw(makeText(p.acronym, 13, {396.0f, y + 11.0f}, ui::theme::Heading));
+        rt().draw(makeText(truncFront(p.name, 20), 13, {486.0f, y + 11.0f}, ui::theme::Text));
+        rt().draw(makeText(p.unit, 12, {648.0f, y + 11.0f}, ui::theme::Text));
+        rt().draw(makeText(stringutils::money(p.unitPrice), 13, {712.0f, y + 11.0f}, ui::theme::Text));
+        ui::theme::drawStatus(rt(), m_font, {856.0f + rx, y + 16.0f}, {84.0f, 26.0f},
             std::to_string(p.availableQuantity) + " left", p.availableQuantity > 0);
         rt().draw(makeText("Tax " + stringutils::money(p.taxPerUnit) + "  -  Discount " +
             stringutils::money(p.discountPerUnit) + "  -  " + p.barcodeFile,
-            10, {272.0f, y + 28.0f}, ui::theme::Muted));
-        y += 56.0f;
+            11, {272.0f, y + 37.0f}, ui::theme::Muted));
+        y += 68.0f;
     }
-    if (total > 8)  // slim scrollbar on the card's right edge
+    if (total > 6)  // slim scrollbar on the card's right edge
     {
-        const float trackX = 958.0f + rx, trackY = 140.0f, trackH = 448.0f;
+        const float trackX = 958.0f + rx, trackY = 140.0f, trackH = 398.0f;
         ui::theme::drawRoundedBox(rt(), {trackX, trackY}, {6.0f, trackH}, 3.0f, ui::theme::LightPanel);
-        const float thumbH = std::max(28.0f, trackH * 8.0f / static_cast<float>(total));
+        const float thumbH = std::max(28.0f, trackH * 6.0f / static_cast<float>(total));
         const float thumbY = trackY + (trackH - thumbH) *
             (maxScroll == 0 ? 0.0f : static_cast<float>(first) / static_cast<float>(maxScroll));
         ui::theme::drawRoundedBox(rt(), {trackX, thumbY}, {6.0f, thumbH}, 3.0f, ui::theme::Accent);
@@ -3280,7 +3402,7 @@ void BarcodeStudioGui::drawProducts()
         std::to_string(total == 0 ? 0 : first + 1) + "-" + std::to_string(last) +
         "  -  reading: " + shorten(m_productService.productFilePath(), 40),
         11, {272.0f, 596.0f}, ui::theme::Muted));
-    if (total > 8)
+    if (total > 6)
     {
         m_productsPrev.setPosition({756.0f + rx, 584.0f});
         m_productsNext.setPosition({862.0f + rx, 584.0f});
@@ -3296,7 +3418,7 @@ void BarcodeStudioGui::drawBillOverlay()
     dim.setFillColor(sf::Color(20, 12, 24, 170));
     rt().draw(dim);
 
-    const sf::FloatRect card({246.0f, 100.0f}, {500.0f + rx, 520.0f});
+    const sf::FloatRect card({246.0f, 84.0f}, {500.0f + rx, 552.0f});
     ui::theme::drawCard(rt(), card);
     const Bill& b = m_lastBill.bill;
     rt().draw(makeText("Bill " + b.id, 20,
@@ -3327,51 +3449,63 @@ void BarcodeStudioGui::drawBillOverlay()
         rt().draw(makeText(stringutils::money(d.lineDiscount), 12,
             {card.position.x + 356.0f, y + 6.0f}, ui::theme::Text));
         y += 30.0f;
-        if (y > card.position.y + 300.0f) break;
+        if (y > card.position.y + 262.0f) break;
     }
-    y = card.position.y + 330.0f;
+    y = card.position.y + 276.0f;
     rt().draw(makeText("Subtotal (no tax):", 12,
         {card.position.x + 24.0f, y}, ui::theme::Text));
     rt().draw(makeText(pkr(b.totalWithoutTax), 12,
-        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 18.0f;
+        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 22.0f;
     rt().draw(makeText("Tax:", 12, {card.position.x + 24.0f, y}, ui::theme::Text));
     rt().draw(makeText(pkr(b.totalTax), 12,
-        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 18.0f;
+        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 22.0f;
     rt().draw(makeText("Product discount:", 12,
         {card.position.x + 24.0f, y}, ui::theme::Text));
     rt().draw(makeText("-" + pkr(b.totalDiscount), 12,
-        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 18.0f;
+        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 22.0f;
     rt().draw(makeText("Seasonal discount:", 12,
         {card.position.x + 24.0f, y}, ui::theme::Text));
     rt().draw(makeText("-" + pkr(b.seasonalDiscount), 12,
-        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 18.0f;
+        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 22.0f;
     rt().draw(makeText("Special discount:", 12,
         {card.position.x + 24.0f, y}, ui::theme::Text));
     rt().draw(makeText("-" + pkr(b.specialDiscount), 12,
-        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 22.0f;
+        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 26.0f;
     rt().draw(makeText("PAYABLE:", 13,
         {card.position.x + 24.0f, y}, ui::theme::Muted));
     rt().draw(makeText(pkr(b.totalPayable), 16,
-        {card.position.x + 320.0f, y - 2.0f}, ui::theme::ActiveText)); y += 22.0f;
+        {card.position.x + 320.0f, y - 2.0f}, ui::theme::ActiveText)); y += 24.0f;
     rt().draw(makeText("Received:", 12,
         {card.position.x + 24.0f, y}, ui::theme::Text));
     rt().draw(makeText(pkr(b.amountReceived), 12,
-        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 18.0f;
+        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 22.0f;
     rt().draw(makeText("Balance:", 12,
         {card.position.x + 24.0f, y}, ui::theme::Text));
     rt().draw(makeText(pkr(b.balanceReturned), 12,
-        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 18.0f;
+        {card.position.x + 356.0f, y}, ui::theme::Text)); y += 22.0f;
     rt().draw(makeText("Status: " + b.paymentStatus, 12,
         {card.position.x + 24.0f, y}, ui::theme::Muted));
 
-    m_billCloseBtn.setPosition({card.position.x + 24.0f, card.position.y + 470.0f});
-    m_printPdfBtn.setPosition({card.position.x + 236.0f, card.position.y + 470.0f});
+    m_billCloseBtn.setPosition({card.position.x + 24.0f, card.position.y + 488.0f});
+    m_printPdfBtn.setPosition({card.position.x + 236.0f, card.position.y + 488.0f});
     m_printPdfBtn.setLabel("Print as PDF");
     m_billCloseBtn.draw(rt());
     m_printPdfBtn.draw(rt());
     if (!m_printMessage.empty())
-        rt().draw(makeText(m_printMessage, 11,
-            {card.position.x + 24.0f, card.position.y + 508.0f},
+    {
+        // The print note belongs in the empty space right of the
+        // Print button - never over the totals. If the window is
+        // too narrow for it there, it drops to its own clear line
+        // under the buttons instead.
+        sf::Text msg = makeText(m_printMessage, 11, {0.0f, 0.0f},
             m_printMessage.find("saved") != std::string::npos
-                ? ui::theme::Success : ui::theme::Error));
+                ? ui::theme::Success : ui::theme::Error);
+        const float msgW = ui::theme::scaledBounds(msg).size.x;
+        const float rightX = card.position.x + 432.0f;
+        if (rightX + msgW <= card.position.x + card.size.x - 16.0f)
+            msg.setPosition({rightX, card.position.y + 502.0f});
+        else
+            msg.setPosition({card.position.x + 24.0f, card.position.y + 534.0f});
+        rt().draw(msg);
+    }
 }

@@ -14,5 +14,8 @@ namespace datetime
     std::string stamp(const char* format);
 
     std::string todayDate();  // YYYY-MM-DD
+
+    // Strict YYYY-MM-DD with real month (1-12) and day (1-31) ranges.
+    bool isValidDate(const std::string& s);
     std::string nowTime();    // HH:MM:SS
 }

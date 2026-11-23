@@ -45,7 +45,7 @@ public:
 
     const std::vector<CartLine>& lines() const { return m_lines; }
     bool empty() const { return m_lines.empty(); }
-    void clear() { m_lines.clear(); }
+    void clear() { m_lines.clear(); m_resumedOrderId.clear(); }
     Totals totals() const;
 
     // Record the cart as an order and generate its bill. The special
@@ -64,7 +64,10 @@ public:
         const std::string& customerContact, const std::string& paymentMode,
         const std::string& paymentMerchant);
 
-    // Load an on-hold (or in-progress) order's lines back into the cart.
+    // Load an on-hold (or in-progress) order's lines back into the cart
+    // and remember its id: a later checkout completes THAT order in
+    // place (same Order Id, its row and detail rows replaced) instead
+    // of leaving a ghost on-hold order behind.
     // Returns "" on success, else "not-found" or "wrong-status".
     std::string resumeOrder(const std::string& orderId);
 
@@ -75,6 +78,11 @@ public:
     // "wrong-status" or "too-old".
     std::string editPaidOrder(const std::string& orderId,
         bool managerApproved, CompletedBill& out);
+
+    // The same existence / status / 7-day checks as editPaidOrder but
+    // WITHOUT the approval gate: loading an order to look at it is
+    // not an edit. Saving still goes through the gate.
+    std::string loadPaidOrder(const std::string& orderId, CompletedBill& out);
 
     // Save an edited paid order: replaces the order's detail rows,
     // rewrites its bill and bill lines in place (same Bill Id),
@@ -96,4 +104,5 @@ private:
     IBillRepository& m_bills;
     IBillDetailRepository& m_billDetails;
     std::vector<CartLine> m_lines;
+    std::string m_resumedOrderId;
 };

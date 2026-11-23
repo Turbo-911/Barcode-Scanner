@@ -28,4 +28,17 @@ std::string stamp(const char* format)
 
 std::string todayDate() { return stamp("%Y-%m-%d"); }
 std::string nowTime() { return stamp("%H:%M:%S"); }
+
+bool isValidDate(const std::string& s)
+{
+    if (s.size() != 10 || s[4] != '-' || s[7] != '-') return false;
+    for (std::size_t i = 0; i < s.size(); ++i)
+    {
+        if (i == 4 || i == 7) continue;
+        if (s[i] < '0' || s[i] > '9') return false;
+    }
+    const int month = std::stoi(s.substr(5, 2));
+    const int day = std::stoi(s.substr(8, 2));
+    return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+}
 }

@@ -29,10 +29,16 @@ std::string money(double value)
 
 bool isValidPhone(const std::string& value)
 {
-    if (value.size() != 11) return false;
+    // Either 11 digits, or the dashed form 0300-1234567 (11 digits
+    // with a dash after the fourth digit).
+    std::string digits;
     for (const char c : value)
-        if (c < '0' || c > '9') return false;
-    return true;
+        if (c >= '0' && c <= '9') digits += c;
+    if (digits.size() != 11) return false;
+    if (value.size() == 11) return value == digits;
+    return value.size() == 12 && value[4] == '-'
+        && value.compare(0, 4, digits, 0, 4) == 0
+        && value.compare(5, 7, digits, 4, 7) == 0;
 }
 
 }

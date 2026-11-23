@@ -1,18 +1,9 @@
 #include "services/seasons_service.h"
+#include "common/date_time.h"
 
 namespace
 {
-    bool isDate(const std::string& s)
-    {
-        if (s.size() != 10) return false;
-        if (s[4] != '-' || s[7] != '-') return false;
-        for (std::size_t i = 0; i < s.size(); ++i)
-        {
-            if (i == 4 || i == 7) continue;
-            if (s[i] < '0' || s[i] > '9') return false;
-        }
-        return true;
-    }
+    bool isDate(const std::string& s) { return datetime::isValidDate(s); }
 }
 
 double SeasonsService::activeDiscountPercentOn(const std::string& date)

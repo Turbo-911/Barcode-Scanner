@@ -44,6 +44,8 @@ public:
     void setFocused(bool focused);
     bool isFocused() const;
     void setMaxLength(std::size_t maxLength);
+    void setAllowDecimal(bool allow);
+    void setPhoneFormat(bool on);
     void setPosition(const sf::Vector2f& position);
     void setSize(const sf::Vector2f& size);
     bool handleClick(const sf::Vector2f& mousePosition);
@@ -58,6 +60,9 @@ private:
     std::string m_placeholder;
     std::string m_text;
     bool m_numericOnly;
+    bool m_decimalAllowed = false;
+    bool m_phoneFormat = false;
+    void applyPhoneFormat();
     bool m_focused;
     float m_cursorTime;
     std::size_t m_maxLength;

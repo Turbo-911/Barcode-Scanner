@@ -5,12 +5,13 @@
 #include "common/date_time.h"
 
 #include <ctime>
+#include <algorithm>
 
 namespace
 {
 bool daysBetween(const std::string& from, const std::string& to, int& out)
 {
-    if (from.size() != 10 || to.size() != 10) return false;
+    if (!datetime::isValidDate(from) || !datetime::isValidDate(to)) return false;
     const int fy = std::stoi(from.substr(0, 4));
     const int fm = std::stoi(from.substr(5, 2));
     const int fd = std::stoi(from.substr(8, 2));
@@ -94,9 +95,17 @@ std::string OrderService::checkout(const std::string& customerName,
     if (amountReceived <= 0.0) amountReceived = t.payable - seasonalAmount - specialAmount;
     if (amountReceived < 0.0) amountReceived = 0.0;
 
+    // A resumed order is completed in place: it keeps its Order Id
+    // and its original date; only its state moves on.
+    Order stored;
+    bool completing = false;
+    if (!m_resumedOrderId.empty())
+        for (const Order& o : m_orders.loadAll())
+            if (o.id == m_resumedOrderId) { stored = o; completing = true; break; }
+
     Order order;
-    order.id = IdGenerator::newOrderId();
-    order.date = today;
+    order.id = completing ? stored.id : IdGenerator::newOrderId();
+    order.date = completing ? stored.date : today;
     order.time = IdGenerator::nowTime();
     order.customerName = customerName;
     order.customerContact = customerContact;
@@ -116,13 +125,30 @@ std::string OrderService::checkout(const std::string& customerName,
 
     const std::vector<BillDetail> billLines = billService.buildDetails(m_lines, billId);
 
-    bool written = m_orders.append(order);
-    for (const OrderDetail& d : details) written = m_details.append(d) && written;
-    written = billService.appendBill(bill, billLines) && written;
+    bool written;
+    if (completing)
+    {
+        std::vector<Order> allOrders = m_orders.loadAll();
+        for (Order& o : allOrders) if (o.id == order.id) o = order;
+        written = m_orders.saveAll(allOrders);
+        std::vector<OrderDetail> allDetails = m_details.loadAll();
+        allDetails.erase(std::remove_if(allDetails.begin(), allDetails.end(),
+            [&](const OrderDetail& d) { return d.orderId == order.id; }), allDetails.end());
+        for (const OrderDetail& d : details) allDetails.push_back(d);
+        written = m_details.saveAll(allDetails) && written;
+        written = billService.appendBill(bill, billLines) && written;
+    }
+    else
+    {
+        written = m_orders.append(order);
+        for (const OrderDetail& d : details) written = m_details.append(d) && written;
+        written = billService.appendBill(bill, billLines) && written;
+    }
     if (!written) return "write-failed";
 
     for (const CartLine& line : m_lines)
         m_products.decreaseStock(line.product.id, line.quantity);
+    m_resumedOrderId.clear();
 
     out.order = order;
     out.details = details;
@@ -140,6 +166,7 @@ std::string OrderService::holdOrder(const std::string& customerName,
 {
     if (m_lines.empty()) return "empty-order";
     if (customerName.empty()) return "no-customer";
+    m_resumedOrderId.clear();  // a fresh hold is a new order, not a completion
 
     Order order;
     order.id = IdGenerator::newOrderId();
@@ -188,6 +215,7 @@ std::string OrderService::resumeOrder(const std::string& orderId)
         if (!p) continue;
         m_lines.push_back({*p, d.quantity});
     }
+    m_resumedOrderId = orderId;
     return "";
 }
 
@@ -195,7 +223,11 @@ std::string OrderService::editPaidOrder(const std::string& orderId,
     bool managerApproved, CompletedBill& out)
 {
     if (!managerApproved) return "not-approved";
+    return loadPaidOrder(orderId, out);
+}
 
+std::string OrderService::loadPaidOrder(const std::string& orderId, CompletedBill& out)
+{
     Order target;
     bool found = false;
     for (const Order& o : m_orders.loadAll())

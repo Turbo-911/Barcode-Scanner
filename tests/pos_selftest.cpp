@@ -22,6 +22,7 @@
 #include "services/report_service.h"
 #include "services/seasons_service.h"
 #include "common/string_utils.h"
+#include "common/date_time.h"
 
 #include <chrono>
 #include <cmath>
@@ -199,6 +200,59 @@ int main()
     std::ifstream pdf(pdfPath, std::ios::binary);
     std::string magic; std::getline(pdf, magic);
     check(!pdfPath.empty() && magic.rfind("%PDF", 0) == 0, "bill PDF written (%PDF header)");
+
+    {   // Resume + checkout completes the held order IN PLACE: same
+        // Order Id, no ghost on-hold row left behind.
+        std::string doneId;
+        for (const std::string& line : RecordFile::readAllLines("Data/order.txt"))
+            if (const auto o = OrderSerialiser::parse(line); o && o->status == "on-hold")
+                doneId = o->id;
+        check(!doneId.empty(), "an on-hold order is waiting to be completed");
+        orders.clear();
+        check(orders.resumeOrder(doneId).empty(), "resume the held order for completion");
+        const std::size_t orderRows = RecordFile::readAllLines("Data/order.txt").size();
+        const std::size_t billRows = RecordFile::readAllLines("Data/bill.txt").size();
+        const auto milkBefore = products.findByBarcode("111001");
+        CompletedBill rb;
+        check(orders.checkout("Hold Customer", "", "paid", "cash", "-", 0.0, 0.0, rb).empty(),
+            "checkout after resume succeeds");
+        check(rb.order.id == doneId, "resumed checkout keeps the same Order Id");
+        check(rb.bill.orderId == doneId, "the bill points at the resumed order");
+        check(RecordFile::readAllLines("Data/order.txt").size() == orderRows,
+            "no ghost order row is added");
+        check(RecordFile::readAllLines("Data/bill.txt").size() == billRows + 1,
+            "exactly one new bill is written");
+        bool paidNow = false;
+        for (const std::string& line : RecordFile::readAllLines("Data/order.txt"))
+            if (const auto o = OrderSerialiser::parse(line);
+                o && o->id == doneId && o->status == "paid")
+                paidNow = true;
+        check(paidNow, "the held order's row is now paid");
+        const auto milkAfter = products.findByBarcode("111001");
+        check(milkBefore && milkAfter
+                && milkAfter->availableQuantity == milkBefore->availableQuantity - 1,
+            "the resumed sale moves stock exactly once");
+        check(orders.resumeOrder(doneId) == "wrong-status",
+            "a completed order cannot be resumed again");
+    }
+
+    // Phone and date rules, and the Order Edit load gate (v31).
+    check(stringutils::isValidPhone("03001234567"), "phone: 11 plain digits accepted");
+    check(stringutils::isValidPhone("0301-2345678"), "phone: dashed form accepted");
+    check(!stringutils::isValidPhone("0301-234567"), "phone: 10 digits rejected");
+    check(!stringutils::isValidPhone("0301-23456789"), "phone: 12 digits rejected");
+    check(!stringutils::isValidPhone("030a-2345678"), "phone: letters rejected");
+    check(datetime::isValidDate("2026-11-23"), "date: a real date accepted");
+    check(!datetime::isValidDate("2026-13-40"), "date: impossible month/day rejected");
+    check(!datetime::isValidDate("23-11-2026"), "date: wrong field order rejected");
+    {
+        CompletedBill peek;
+        check(orders.loadPaidOrder(saved.order.id, peek).empty()
+                && peek.order.id == saved.order.id,
+            "a paid order can be LOADED without manager approval");
+        check(orders.editPaidOrder(saved.order.id, false, peek) == "not-approved",
+            "the edit gate itself still refuses without approval");
+    }
 
     std::cout << (failures == 0 ? "ALL POS TESTS PASSED\n" : "SOME TESTS FAILED\n");
     return failures == 0 ? 0 : 1;

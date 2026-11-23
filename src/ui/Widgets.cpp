@@ -72,12 +72,36 @@ PinkTextBox::PinkTextBox(sf::Font& font, const sf::Vector2f& position,
 
 void PinkTextBox::setText(const std::string& text)
 {
+    if (m_phoneFormat)
+    {
+        m_text = text;
+        applyPhoneFormat();
+        return;
+    }
     m_text = text.size() > m_maxLength ? text.substr(0, m_maxLength) : text;
+}
+
+void PinkTextBox::setPhoneFormat(bool on)
+{
+    m_phoneFormat = on;
+    if (on) applyPhoneFormat();
+}
+
+void PinkTextBox::applyPhoneFormat()
+{
+    // Keep only the digits (at most 11) and show them as 0300-1234567:
+    // the dash appears on its own once the fifth digit is typed.
+    std::string digits;
+    for (const char c : m_text)
+        if (c >= '0' && c <= '9') digits += c;
+    if (digits.size() > 11) digits = digits.substr(0, 11);
+    m_text = digits.size() > 4 ? digits.substr(0, 4) + "-" + digits.substr(4) : digits;
 }
 const std::string& PinkTextBox::getText() const { return m_text; }
 void PinkTextBox::setFocused(bool focused) { m_focused = focused; }
 bool PinkTextBox::isFocused() const { return m_focused; }
 void PinkTextBox::setMaxLength(std::size_t maxLength) { m_maxLength = maxLength; }
+void PinkTextBox::setAllowDecimal(bool allow) { m_decimalAllowed = allow; }
 void PinkTextBox::setPosition(const sf::Vector2f& position) { m_position = position; }
 void PinkTextBox::setSize(const sf::Vector2f& size) { m_size = size; }
 
@@ -90,6 +114,29 @@ bool PinkTextBox::handleClick(const sf::Vector2f& mousePosition)
 void PinkTextBox::handleTextEntered(char32_t unicode)
 {
     if (!m_focused) return;
+    if (m_phoneFormat)
+    {
+        if (unicode == 8)  // Backspace removes the last DIGIT
+        {
+            std::string digits;
+            for (const char c : m_text)
+                if (c >= '0' && c <= '9') digits += c;
+            if (!digits.empty()) digits.pop_back();
+            m_text = digits;
+            applyPhoneFormat();
+            return;
+        }
+        if (unicode >= '0' && unicode <= '9')
+        {
+            std::string digits;
+            for (const char c : m_text)
+                if (c >= '0' && c <= '9') digits += c;
+            if (digits.size() < 11) digits += static_cast<char>(unicode);
+            m_text = digits;
+            applyPhoneFormat();
+        }
+        return;
+    }
     if (unicode == 8)  // Backspace
     {
         if (!m_text.empty()) m_text.pop_back();
@@ -98,6 +145,8 @@ void PinkTextBox::handleTextEntered(char32_t unicode)
     if (unicode < 32 || unicode > 126 || m_text.size() >= m_maxLength) return;
     const char c = static_cast<char>(unicode);
     if (!m_numericOnly || (c >= '0' && c <= '9')) m_text += c;
+    else if (m_decimalAllowed && c == '.'
+        && m_text.find('.') == std::string::npos) m_text += c;
 }
 
 void PinkTextBox::update(float deltaSeconds)

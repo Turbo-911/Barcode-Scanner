@@ -14,7 +14,7 @@ bool sameDay(const std::string& a, const std::string& b) { return a == b; }
 
 bool withinWeek(const std::string& a, const std::string& today)
 {
-    if (a.size() != 10 || today.size() != 10) return false;
+    if (!datetime::isValidDate(a) || !datetime::isValidDate(today)) return false;
     const int ay = std::stoi(a.substr(0, 4));
     const int am = std::stoi(a.substr(5, 2));
     const int ad = std::stoi(a.substr(8, 2));

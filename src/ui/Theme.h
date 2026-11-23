@@ -22,7 +22,7 @@ namespace theme
     inline const sf::Color PrimaryPressed(0xE94F7AFF);
     inline const sf::Color Accent(0xFF8FABFF);
     inline const sf::Color Lavender(0xC77DFFFF);      // used sparingly
-    inline const sf::Color Active(0xFFE5EEFF);        // active nav pill
+    inline const sf::Color Active(0xF59FC2FF);        // selected list row (clearly deeper than LightPanel)
     inline const sf::Color ActiveText(0xC2185BFF);
     inline const sf::Color Input(0xFFFFFBFF);         // textbox background
     inline const sf::Color Focus(0xFF5C8AFF);

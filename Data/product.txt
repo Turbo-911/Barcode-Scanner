@@ -14,3 +14,11 @@
 1014 188899 SHAMP Shampoo_Bottle count 620.00 28.00 30.00 14 tests/barcode_188899.bmp 18 #
 1015 189900 DETRG Detergent_Pack weight 720.00 32.00 0.00 9 tests/barcode_189900.bmp 18 #
 1016 171016 CHOCO Chocolate_Bar count 120.00 5.00 15.00 0 tests/barcode_171016.bmp 17 #
+1017 111017 YOG500 Fresh_Yogurt count 120.00 6.00 0.00 35 tests/barcode_111017.bmp 11 #
+1018 121018 RUSK Tea_Rusk count 150.00 7.00 5.00 28 tests/barcode_121018.bmp 12 #
+1019 131019 FLOUR5KG Wheat_Flour weight 780.00 20.00 30.00 18 tests/barcode_131019.bmp 13 #
+1020 141020 HONEY500 Pure_Honey count 950.00 45.00 0.00 10 tests/barcode_141020.bmp 14 #
+1021 151021 JUICE1L Orange_Juice count 320.00 15.00 10.00 24 tests/barcode_151021.bmp 15 #
+1022 161022 GHEE1KG Desi_Ghee weight 1850.00 80.00 50.00 6 tests/barcode_161022.bmp 16 #
+1023 171023 CHIPS Potato_Chips count 100.00 5.00 0.00 50 tests/barcode_171023.bmp 17 #
+1024 181024 TISSUE Tissue_Box count 180.00 8.00 5.00 30 tests/barcode_181024.bmp 18 #

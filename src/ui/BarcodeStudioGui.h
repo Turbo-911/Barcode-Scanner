@@ -135,7 +135,7 @@ private:
 
     // ---- POS (existing) ----
     ui::PinkTextBox m_posBarcode, m_posQty, m_posCustomer, m_posContact;
-    ui::PinkButton m_posDescBtn, m_posAddBtn, m_posCamBtn;
+    ui::PinkButton m_posAddBtn, m_posCamBtn;
     ui::PinkDropdown m_modeDrop, m_statusDrop, m_merchantDrop;
     int m_modeIdxCache{0};
     ui::PinkButton m_posBillBtn, m_posNewBtn, m_productsRefresh, m_billCloseBtn;
@@ -143,6 +143,7 @@ private:
     int m_productsScroll{0};
     std::optional<Product> m_descProduct;
     std::string m_lastScannedCode;
+    std::string m_autoDescCode;
     std::vector<Product> m_productsCache;
     std::string m_posMessage{"Scan an item to add it, or type a barcode, set qty, then Add to Order."};
     bool m_posMessageOk{true};
@@ -152,7 +153,7 @@ private:
 
     // ---- Phase 3: role, POS extras, manager state ----
     UserRole m_role{UserRole::Cashier};
-    ui::PinkButton m_roleBtn;
+    float m_roleSlide{0.0f};  // role slider thumb: 0 = Cashier end, 1 = Manager end
 
     // POS extras (special discount + amount received + hold + resume + print)
     ui::PinkTextBox m_posSpecialPct;   // 0..8 (clamped)
@@ -181,6 +182,7 @@ private:
     ui::PinkButton m_invSetBtn, m_invBackBtn;
     std::string m_invMessage;
     int m_invSelectedIdx{-1};
+    int m_invScroll{0};
 
     // Manager - Product edit screen
     ui::PinkTextBox m_peIdInput, m_peNameInput, m_peAcronymInput,
@@ -188,6 +190,7 @@ private:
     ui::PinkDropdown m_peUnitDrop, m_peCategoryDrop;
     ui::PinkButton m_peSaveBtn, m_peBackBtn, m_peBarcodeBtn;
     std::string m_peMessage;
+    int m_peLoadedId{-1};  // product loaded in the edit form (its list row is highlighted)
     std::string m_peGeneratedBarcode;
 
     // Manager - Reports screen
@@ -211,6 +214,7 @@ private:
     ui::PinkButton m_oeLoadBtn, m_oeApproveBtn, m_oeSaveBtn, m_oeBackBtn;
     std::string m_oeMessage;
     bool m_oeManagerApproved{false};
+    std::string m_oeLoadedId;  // the order actually loaded in Order Edit (Save acts on this, not the id box)
     std::vector<std::pair<Product, int>> m_oeLines;
 
     // Bill Print screen (or overlay)
@@ -223,6 +227,7 @@ private:
     float m_renderScale{1.0f};
 
     // ---- POS actions (existing + new) ----
+    bool onEnterKey();
     void refreshProducts();
     void posDescribe();
     void posAdd();
@@ -255,6 +260,7 @@ private:
 
     // ---- Cashier actions (held orders) ----
     void refreshHeldOrders();
+    void applyResumedHeader(const Order& o);
     void heldResumeSelected();
     void heldDeleteSelected();
 
@@ -281,7 +287,6 @@ private:
     void drawHeldOrders();
     void drawOrderEdit();
     void drawBillPrint();
-    void drawRoleButton();
     void drawManagerPill(const sf::FloatRect& bounds, const std::string& text, bool ok);
 
     // ---- Shared ----
@@ -330,8 +335,6 @@ private:
     std::array<float, 6> m_tilePop{};
     std::size_t m_prevCodeLen{0};
     float m_testRunTime{99.0f};
-    float m_mascotHappy{0.0f};
-    std::string m_mascotText{"Let's create a\nbarcode!"};
     sf::Vector2f m_mouse{0.0f, 0.0f};
     void initParticles();
     void updateParticles(float dt);
@@ -339,13 +342,11 @@ private:
     void drawBursts();
     void spawnBurst(const sf::Vector2f& centre, int count = 26);
     void celebrate(const std::string& bubble, const sf::Vector2f& burstAt);
-    void drawMascot();
     void switchView(View next);
     void drawDigitTiles(float shakeX);
 
     bool anyTextFocused() const;
     void handleEvents();
-    void handleEnterKey();
     void update(float deltaSeconds);
     void draw();
 };
