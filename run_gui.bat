@@ -87,7 +87,7 @@ if not errorlevel 1 (
     for %%D in (src src\barcode src\camera src\common src\domain src\persistence src\services src\ui) do (
         if not exist "build_obj\%%D" mkdir "build_obj\%%D"
     )
-    echo Building Chili Mili Barcode POS Studio - only changed files...
+    echo Building Chili Mili Barcode POS Studio
     mingw32-make -j%NUMBER_OF_PROCESSORS% -f Makefile.gui
     if errorlevel 1 (
         echo.
