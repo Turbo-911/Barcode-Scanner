@@ -2245,13 +2245,16 @@ void BarcodeStudioGui::drawReports()
     m_reportFromInput.draw(rt());
     m_reportToInput.draw(rt());
     m_reportRunBtn.draw(rt());
-    m_reportDrop.drawList(rt());
 
     ui::theme::drawCard(rt(), {{246.0f, 192.0f}, {728.0f + rx, 408.0f}});
     if (m_reportTable.title.empty())
     {
         rt().draw(makeText("Pick a report to see it here.", 15,
             {330.0f, 360.0f}, ui::theme::Muted));
+        // List draws on top of the card AND the hint text, before
+        // this early return (see the note at the end of the
+        // function for why it is drawn in both places).
+        m_reportDrop.drawList(rt());
         return;
     }
     rt().draw(makeText(m_reportTable.title, 15, {272.0f, 208.0f}, ui::theme::Heading));
@@ -2262,6 +2265,13 @@ void BarcodeStudioGui::drawReports()
         rt().draw(makeText(m_reportMessage, 11, {272.0f, 584.0f}, ui::theme::Muted));
     m_reportPrevBtn.draw(rt());
     m_reportNextBtn.draw(rt());
+
+    // Open drop-down list draws last, on top of the results card
+    // and the table: the list is 10 rows tall (y 162..482) and
+    // the card starts at y 192, so drawing it before the card hid
+    // 9 of the 10 report types. It is drawn in both branches
+    // because the empty-table branch above returns early.
+    m_reportDrop.drawList(rt());
 }
 
 void BarcodeStudioGui::drawReportTable(const sf::FloatRect& card)

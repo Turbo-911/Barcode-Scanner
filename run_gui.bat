@@ -36,7 +36,7 @@ if exist "C:\msys64\ucrt64\bin\mingw32-make.exe" (
     for %%D in (src src\barcode src\camera src\common src\domain src\persistence src\services src\ui) do (
         if not exist "build_obj\%%D" mkdir "build_obj\%%D"
     )
-    echo Building Chili Mili Barcode POS Studio - only changed files...
+    echo Building Chili Mili Barcode POS Studio
     "C:\msys64\ucrt64\bin\mingw32-make.exe" -j%NUMBER_OF_PROCESSORS% -f Makefile.gui
     if errorlevel 1 (
         echo.

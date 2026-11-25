@@ -551,3 +551,52 @@ for it was a small pill that was easy to miss. Two changes:
   and the custom report range; src/barcode/encoder.h no longer
   repeats common.h's default arguments, so it can be included
   like any other header.
+
+## Fresh paid order for the Order Edit demo, and a record-append fix (v32)
+
+- **The problem found on 2026-11-26**: the Order Edit screen was
+  always empty, not because the edit code was broken, but because
+  every paid order in the shipped data was more than 7 days old (the
+  newest was 2026-11-18, 8 days before the demo), so the 7-day gate
+  refused every load with "More than 7 days have passed."
+- **Fix**: one fresh paid order, created by the real checkout code:
+  order 00240326, 2026-11-26, Ayesha Khan, 0300-5551234, cash, paid.
+  Lines: Fresh Milk x2, Branded Bread x1, White Sugar x1. Bill
+  100240326: without tax 690.00, tax 33.00, product discount 15.00,
+  seasonal discount 70.80 (active 10% season), payable 637.20,
+  received 1000.00, balance 362.80. Stock in product.txt decreased
+  for the three lines (milk 26->24, bread 25->24, sugar 40->39).
+  Load it in Order Edit to demo the approve-then-save flow; it stays
+  editable until 2026-12-03.
+- **A second, worse bug found while seeding it**: Data/bill.txt and
+  Data/BillDetail.txt ended without a trailing newline, and
+  RecordFile::appendLine wrote the new record straight onto the
+  last line. The reader is line-based and the bill parser requires
+  the 15th token to be exactly "#", so the glued line failed to
+  parse and BOTH bills on it vanished (12 bills read as 10, 20
+  bill details as 18). The two files are repaired (newline added
+  at the junction), and appendLine now ends a file that does not
+  already end with a newline before appending, so this can never
+  happen again — verified by stripping the newlines and running a
+  real POS checkout, which landed cleanly on its own line.
+
+## Reports drop-down list was hidden behind the results card (v33)
+
+- **The bug (found by Talha from a screenshot, 2026-11-26)**: on the
+  Reports screen, opening the report-type drop-down showed only the
+  first option ("incomplete"). The drop-down holds 10 options
+  (incomplete, completed, daily, weekly, monthly, yearly, custom,
+  sales_discounts, top_sold, top_stock) and its list is 10 rows tall
+  (y 162..482), but drawReports drew the list BEFORE the results
+  card, and the card (top y 192) painted over rows 2..10. Clicking
+  still worked on the hidden rows — only the drawing was wrong.
+- **Fix**: m_reportDrop.drawList() now runs on top of the results
+  card — the same rule the POS screen already follows ("open
+  drop-down lists draw last"). It is drawn in both branches: the
+  empty-table branch returns early, so a single call at the end
+  of the function never drew while no report had been picked yet
+  (that was the first attempt, caught by the screenshot check),
+  and drawing it only in the empty branch would leave it under
+  the table rows once a report is loaded. No other screen had
+  this problem: Product Edit draws its lists last, and the POS
+  mode/status/merchant lists already draw last.

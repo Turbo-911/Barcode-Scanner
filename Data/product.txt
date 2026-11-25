@@ -1,8 +1,8 @@
-1001 111001 MILK500 Fresh_Milk count 180.00 10.00 0.00 26 tests/barcode_111001.bmp 11 #
-1002 129876 BREAD Branded_Bread count 120.00 5.00 10.00 25 tests/barcode_129876.bmp 12 #
+1001 111001 MILK500 Fresh_Milk count 180.00 10.00 0.00 24 tests/barcode_111001.bmp 11 #
+1002 129876 BREAD Branded_Bread count 120.00 5.00 10.00 24 tests/barcode_129876.bmp 12 #
 1003 131000 EGGS12 Farm_Eggs_Dozen count 320.00 15.00 0.00 30 tests/barcode_131000.bmp 13 #
 1004 132000 RICE5KG Basmati_Rice weight 1450.00 50.00 100.00 12 tests/barcode_132000.bmp 13 #
-1005 145555 SUGAR1KG White_Sugar weight 210.00 8.00 5.00 40 tests/barcode_145555.bmp 14 #
+1005 145555 SUGAR1KG White_Sugar weight 210.00 8.00 5.00 39 tests/barcode_145555.bmp 14 #
 1006 159999 TEA250 Lipton_Tea count 450.00 25.00 20.00 20 tests/barcode_159999.bmp 15 #
 1007 161122 OIL1L Cooking_Oil count 560.00 30.00 0.00 8 tests/barcode_161122.bmp 16 #
 1008 172468 BISC Biscuit_Pack count 80.00 4.00 5.00 60 tests/barcode_172468.bmp 17 #

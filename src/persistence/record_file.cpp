@@ -18,6 +18,26 @@ std::vector<std::string> RecordFile::readAllLines(const std::string& path)
 
 bool RecordFile::appendLine(const std::string& path, const std::string& line)
 {
+    // Never glue onto a previous record: the shipped bill files once
+    // ended without a trailing newline, so an append landed on the same
+    // line and the line-based reader dropped BOTH records. If the file
+    // already has content that does not end with a newline, end it first.
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec) && std::filesystem::file_size(path, ec) > 0)
+    {
+        std::ifstream probe(path, std::ios::binary | std::ios::ate);
+        if (probe)
+        {
+            char last = '\0';
+            probe.seekg(-1, std::ios::end);
+            probe.get(last);
+            if (last != '\n')
+            {
+                std::ofstream fix(path, std::ios::app | std::ios::binary);
+                if (fix) fix << '\n';
+            }
+        }
+    }
     std::ofstream out(path, std::ios::app);
     if (!out) return false;
     out << line << "\n";
