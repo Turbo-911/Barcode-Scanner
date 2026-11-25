@@ -30,17 +30,53 @@ SRCS := src/main.cpp src/App.cpp \
 OBJS := $(SRCS:%.cpp=$(OBJDIR)/%.o)
 DEPS := $(OBJS:.o=.d)
 
+# D-14/D-35: the object folders are created by make itself, so a direct
+# `mingw32-make -f Makefile.gui` works on a fresh clone without run_gui.bat.
+# NOTE (v36 fix): `all` must stay the FIRST target in this file - it is the
+# default goal. In v35 the build_obj rule below came first, so plain
+# `mingw32-make -f Makefile.gui` stopped after the folders existed
+# ("build_obj is up to date") and never compiled anything.
 all: $(TARGET)
+
+$(OBJDIR):
+>mkdir $(OBJDIR)
+>mkdir $(OBJDIR)/src
+>mkdir $(OBJDIR)/src/barcode
+>mkdir $(OBJDIR)/src/camera
+>mkdir $(OBJDIR)/src/common
+>mkdir $(OBJDIR)/src/domain
+>mkdir $(OBJDIR)/src/persistence
+>mkdir $(OBJDIR)/src/services
+>mkdir $(OBJDIR)/src/ui
 
 $(TARGET): $(OBJS)
 >$(CXX) $(OBJS) -o $@ $(LDLIBS)
 
-$(OBJDIR)/%.o: %.cpp
+$(OBJDIR)/%.o: %.cpp | $(OBJDIR)
 >$(CXX) $(CXXFLAGS) -c $< -o $@
 
 -include $(DEPS)
 
+# D-13: build pos_selftest and run it in a fresh temp folder, never in
+# the repo root - it seeds (truncates) Data/*.txt in its working dir.
+# The test itself also refuses to run against a non-empty catalogue.
+# On a failure make stops here, leaving pos_selftest_run/ behind with
+# the seeded data for inspection; on success the folder is removed.
+TESTSRCS := tests/pos_selftest.cpp $(wildcard src/persistence/*.cpp src/services/*.cpp src/domain/*.cpp) src/common/string_utils.cpp src/common/date_time.cpp
+TESTBIN := pos_selftest.exe
+TESTDIR := pos_selftest_run
+
+$(TESTBIN): $(TESTSRCS)
+>$(CXX) -std=c++17 -Isrc $(TESTSRCS) -o $@
+
+test: $(TESTBIN)
+>if exist $(TESTDIR) rmdir /s /q $(TESTDIR)
+>mkdir $(TESTDIR)
+>copy $(TESTBIN) $(TESTDIR)
+>cd $(TESTDIR) && $(TESTBIN)
+>rmdir /s /q $(TESTDIR)
+
 clean:
 >if exist $(OBJDIR) rmdir /s /q $(OBJDIR)
 
-.PHONY: all clean
+.PHONY: all clean test

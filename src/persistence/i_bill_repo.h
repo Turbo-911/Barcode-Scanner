@@ -18,6 +18,8 @@ public:
     virtual std::optional<Bill> findById(const std::string& id) = 0;
     virtual int count() = 0;
     virtual std::string filePath() const = 0;
+    // Lines lost on the last loadAll (D-03). 0 when the last load was clean.
+    virtual int droppedLines() const { return 0; }
 };
 
 // BillFileRepository - IBillRepository backed by Data/bill.txt.
@@ -33,6 +35,9 @@ public:
     std::optional<Bill> findById(const std::string& id) override;
     int count() override;
     std::string filePath() const override { return m_path; }
+    int droppedLines() const override { return m_droppedLines; }
 private:
     std::string m_path;
+    int m_droppedLines = 0;
+    bool m_backupWritten = false;
 };

@@ -14,6 +14,8 @@ public:
     virtual std::vector<Order> loadAll() = 0;
     virtual bool saveAll(const std::vector<Order>& orders) = 0;
     virtual int count() = 0;
+    // Lines lost on the last loadAll (D-03). 0 when the last load was clean.
+    virtual int droppedLines() const { return 0; }
 };
 
 class IOrderDetailRepository
@@ -24,6 +26,7 @@ public:
     virtual std::vector<OrderDetail> loadAll() = 0;
     virtual std::vector<OrderDetail> loadForOrder(const std::string& orderId) = 0;
     virtual bool saveAll(const std::vector<OrderDetail>& details) = 0;
+    virtual int droppedLines() const { return 0; }
 };
 
 // File-backed repositories for Data/order.txt and Data/orderDetail.txt.
@@ -39,8 +42,11 @@ public:
     bool saveAll(const std::vector<Order>& orders) override;
     int count() override;
     std::string filePath() const { return m_path; }
+    int droppedLines() const override { return m_droppedLines; }
 private:
     std::string m_path;
+    int m_droppedLines = 0;
+    bool m_backupWritten = false;
 };
 
 class OrderDetailFileRepository : public IOrderDetailRepository
@@ -52,6 +58,9 @@ public:
     std::vector<OrderDetail> loadForOrder(const std::string& orderId) override;
     bool saveAll(const std::vector<OrderDetail>& details) override;
     std::string filePath() const { return m_path; }
+    int droppedLines() const override { return m_droppedLines; }
 private:
     std::string m_path;
+    int m_droppedLines = 0;
+    bool m_backupWritten = false;
 };

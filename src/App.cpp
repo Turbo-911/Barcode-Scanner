@@ -164,21 +164,47 @@ void App::scanWithCamera() {
     ItfBarcodeDecoder decoder;
     ScanService scanner(decoder);
 
+    // D-12: a failed capture no longer aborts the scan on the spot -
+    // one dropped frame used to end all 30 tries. Captures are
+    // retried like decode failures, up to kCameraTries attempts,
+    // and the whole scan stops at an overall 45-second deadline
+    // (checked between attempts; a single blocking capture call
+    // itself cannot be interrupted from here).
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::seconds(45);
+    int captureFailures = 0;
+    Image lastFrame;
+    bool haveLastFrame = false;
+
     for (int attempt = 1; attempt <= kCameraTries; ++attempt) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            std::cout << "\n  Stopped: the 45-second camera scan deadline was reached.\n";
+            break;
+        }
+
         Image frame;
         if (!camera.capture(frame)) {
-            std::cout << "  Error: camera capture failed. See the [Camera] "
-                         "diagnostic line above for the failing stage and HRESULT.\n";
-            return;
+            ++captureFailures;
+            std::cout << "  Attempt " << attempt << "/" << kCameraTries
+                      << ": camera capture failed (" << captureFailures
+                      << " in a row), retrying...\n";
+#ifdef _WIN32
+            Sleep(150);
+#else
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+#endif
+            continue;
         }
+        captureFailures = 0;
+
+        // Keeping the last good frame so we can debug why decoding failed.
+        lastFrame = frame;
+        haveLastFrame = true;
 
         if (scanner.feedFrame(frame)) {
             printResult(scanner.confirmedCode());
             return;
         }
-
-        // Keeping the last frame so we can debug why decoding failed.
-        if (attempt == kCameraTries) imageio::saveImage(frame, "last_capture.bmp");
 
         std::cout << "  Attempt " << attempt << "/" << kCameraTries
                   << ": no barcode found, trying again...\r" << std::flush;
@@ -189,13 +215,28 @@ void App::scanWithCamera() {
 #endif
     }
 
-    std::cout << "\n  Could not read a barcode from the camera. "
-                 "Last frame saved as last_capture.bmp\n";
+    if (haveLastFrame) imageio::saveImage(lastFrame, "last_capture.bmp");
+    std::cout << "\n  Could not read a barcode from the camera. ";
+    if (haveLastFrame)
+        std::cout << "Last frame saved as last_capture.bmp\n";
+    else
+        std::cout << "No frame was ever captured, so there is nothing to save.\n";
+}
+
+// D-13: find the tests/ dir next to the current folder (project root)
+// or one level up (a build folder). Empty when it cannot be found.
+std::string findTestsDir() {
+    const char* candidates[] = {"tests", "../tests"};
+    for (const char* c : candidates) {
+        std::ifstream probe(std::string(c) + "/test_normal.bmp", std::ios::binary);
+        if (probe.good()) return c;
+    }
+    return "";
 }
 
 void App::selfTest() {
     const std::vector<std::string> samples = {
-        "123456", "987654", "100000", "200001", "555555", "999999"};
+        "123456", "987654", "100000", "200001", "145555", "999999"};
 
     int passed = 0;
     std::cout << "\nRunning encode -> decode round trip:\n";
@@ -209,7 +250,43 @@ void App::selfTest() {
                   << (ok ? "   PASS" : "   FAIL") << "\n";
         if (ok) ++passed;
     }
-    std::cout << "Result: " << passed << "/" << samples.size() << " passed.\n";
+    // D-13: also decode the real stress BMPs in tests/, not just
+    // in-memory renders. Graceful when tests/ is not next to the CWD.
+    const std::string testsDir = findTestsDir();
+    int filePassed = 0;
+    int fileTotal = 0;
+    if (testsDir.empty())
+    {
+        std::cout << "tests/ not found next to the current folder - file checks skipped.\n"
+                     "Run the console from the project root to include them.\n";
+    }
+    else
+    {
+        const std::vector<std::pair<std::string, std::string>> files = {
+            {"test_normal.bmp", "123456"},
+            {"test_rotated.bmp", "987654"},
+            {"test_inverted.bmp", "123456"},
+            {"test_blurry.bmp", "555555"},
+            {"test_noisy.bmp", "888888"},
+            {"test_small.bmp", "314159"},
+            {"test_large.bmp", "654321"}};
+        std::cout << "\nDecoding stress files in " << testsDir << "/:\n";
+        for (const auto& f : files)
+        {
+            ++fileTotal;
+            Image img;
+            std::string result;
+            const bool ok = imageio::loadImage(testsDir + "/" + f.first, img) &&
+                decodeBarcode(img, result) && result == f.second;
+            std::cout << "  " << f.first << " -> "
+                      << (result.empty() ? "(nothing)" : result)
+                      << (ok ? "   PASS" : "   FAIL") << "\n";
+            if (ok) ++filePassed;
+        }
+        std::cout << "File checks: " << filePassed << "/" << fileTotal << " passed.\n";
+    }
+    std::cout << "Result: " << (passed + filePassed) << "/"
+              << (samples.size() + static_cast<std::size_t>(fileTotal)) << " passed.\n";
 }
 
 int App::run() {

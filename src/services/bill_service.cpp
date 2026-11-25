@@ -1,8 +1,11 @@
 #include "services/bill_service.h"
 
+#include <cmath>
+#include <optional>
+
 // BillService member definitions (declared in bill_service.h).
 
-Bill BillService::buildBill(const Order& order, const Totals& totals,
+std::optional<Bill> BillService::buildBill(const Order& order, const Totals& totals,
     const std::string& billId, double seasonalDiscount,
     double specialDiscount, double amountReceived) const
 {
@@ -10,20 +13,29 @@ Bill BillService::buildBill(const Order& order, const Totals& totals,
     b.id = billId;
     b.customerName = order.customerName;
     b.orderId = order.id;
-    b.totalWithoutTax = totals.withoutTax;
-    b.totalTax = totals.tax;
-    b.totalDiscount = totals.discount;
-    b.seasonalDiscount = seasonalDiscount;
-    b.specialDiscount = specialDiscount;
-    // The one payable formula (requirement 8): what the customer owes
-    // after product discounts and the two bill-level discounts.
-    b.totalPayable = totals.withoutTax + totals.tax - totals.discount
-        - seasonalDiscount - specialDiscount;
-    if (b.totalPayable < 0.0) b.totalPayable = 0.0;
-    b.amountReceived = amountReceived;
+    b.totalWithoutTax = BillCalculator::round2(totals.withoutTax);
+    b.totalTax = BillCalculator::round2(totals.tax);
+    b.totalDiscount = BillCalculator::round2(totals.discount);
+    b.seasonalDiscount = BillCalculator::round2(seasonalDiscount);
+    b.specialDiscount = BillCalculator::round2(specialDiscount);
+    // THE one payable formula (requirement 8, D-31/D-32): what the
+    // customer owes after product discounts and the two bill-level
+    // discounts, rounded to whole paisa, never below zero.
+    b.totalPayable = BillCalculator::payableAfterDiscounts(totals,
+        seasonalDiscount, specialDiscount);
+    // The written fields must sum to the written payable: withoutTax +
+    // tax - discount - seasonal - special == payable. Everything above
+    // is rounded to 2 decimals, so this holds exactly; if it ever does
+    // not, refuse the bill instead of writing a wrong one (D-32).
+    const double recomputed = BillCalculator::round2(
+        b.totalWithoutTax + b.totalTax - b.totalDiscount
+        - b.seasonalDiscount - b.specialDiscount);
+    if (std::fabs(recomputed - b.totalPayable) > 0.005)
+        return std::nullopt;
+    b.amountReceived = BillCalculator::round2(amountReceived);
     // Balance can never be negative: underpayment is not change.
-    b.balanceReturned = amountReceived > b.totalPayable
-        ? amountReceived - b.totalPayable : 0.0;
+    b.balanceReturned = b.amountReceived > b.totalPayable
+        ? BillCalculator::round2(b.amountReceived - b.totalPayable) : 0.0;
     b.paymentStatus = order.status;  // bill status mirrors the order status
     b.billDate = order.date;
     b.billTime = order.time;
@@ -42,7 +54,7 @@ std::vector<BillDetail> BillService::buildDetails(
         d.unitPrice = line.product.unitPrice;  // without tax
         d.quantity = line.quantity;
         // Requirement 9: the LINE's total discount (per-unit x quantity).
-        d.lineDiscount = line.product.discountPerUnit * line.quantity;
+        d.lineDiscount = BillCalculator::round2(line.product.discountPerUnit * line.quantity);
         out.push_back(d);
     }
     return out;

@@ -10,8 +10,13 @@ CategoryFileRepository::CategoryFileRepository(std::string fileName)
 std::vector<Category> CategoryFileRepository::loadAll()
 {
     std::vector<Category> categories;
+    m_droppedLines = 0;
+    m_backupWritten = false;
     for (const std::string& line : RecordFile::readAllLines(m_path))
+    {
         if (auto c = CategorySerialiser::parse(line)) categories.push_back(*c);
+        else ++m_droppedLines;  // D-03: counted, reported, never silent
+    }
     return categories;
 }
 
@@ -24,6 +29,11 @@ std::optional<Category> CategoryFileRepository::findById(const std::string& id)
 
 bool CategoryFileRepository::saveAll(const std::vector<Category>& categories)
 {
+    if (m_droppedLines > 0 && !m_backupWritten)
+    {
+        RecordFile::writeBackup(m_path);
+        m_backupWritten = true;
+    }
     std::vector<std::string> lines;
     for (const Category& c : categories) lines.push_back(CategorySerialiser::format(c));
     return RecordFile::writeAllLines(m_path, lines);

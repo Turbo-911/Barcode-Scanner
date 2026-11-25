@@ -17,6 +17,9 @@ public:
     virtual std::optional<Product> findById(int id) = 0;
     virtual bool saveAll(const std::vector<Product>& products) = 0;  // e.g. after stock changes
     virtual std::string filePath() const = 0;
+    // Lines lost on the last loadAll (D-03): unparsable lines are counted,
+    // never silently dropped. 0 when the last load was clean.
+    virtual int droppedLines() const { return 0; }
 };
 
 // ProductFileRepository - IProductRepository backed by Data/product.txt.
@@ -32,7 +35,10 @@ public:
     std::optional<Product> findById(int id) override;
     bool saveAll(const std::vector<Product>& products) override;
     std::string filePath() const override { return m_path; }
+    int droppedLines() const override { return m_droppedLines; }
 
 private:
     std::string m_path;
+    int m_droppedLines = 0;
+    bool m_backupWritten = false;
 };

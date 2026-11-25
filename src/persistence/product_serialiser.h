@@ -4,8 +4,11 @@
 #include <string>
 
 // ProductSerialiser - converts ONE Product <-> ONE Data/product.txt line.
-// It knows the field order and nothing else (SRP):
-//   id barcode acronym name unit price tax discount qty barcodeFile categoryId #
+// It knows the field order and nothing else (SRP). Format (D-19) writes
+// the 12-field Phase 3 line and reads BOTH shapes:
+//   Phase 3: id barcode acronym name unit price tax discount qty barcodeFile categoryId #
+//   Phase 2: id barcode acronym name unit price tax discount qty barcodeFile #
+// A Phase 2 line derives its categoryId from the barcode's first 2 digits.
 // Names are written with '_' for spaces (see TextTokens).
 class ProductSerialiser
 {

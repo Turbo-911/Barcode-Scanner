@@ -12,8 +12,13 @@ ProductFileRepository::ProductFileRepository(std::string fileName)
 std::vector<Product> ProductFileRepository::loadAll()
 {
     std::vector<Product> products;
+    m_droppedLines = 0;
+    m_backupWritten = false;
     for (const std::string& line : RecordFile::readAllLines(m_path))
+    {
         if (auto p = ProductSerialiser::parse(line)) products.push_back(*p);
+        else ++m_droppedLines;  // D-03: counted, reported, never silent
+    }
     return products;
 }
 
@@ -33,6 +38,11 @@ std::optional<Product> ProductFileRepository::findById(int id)
 
 bool ProductFileRepository::saveAll(const std::vector<Product>& products)
 {
+    if (m_droppedLines > 0 && !m_backupWritten)
+    {
+        RecordFile::writeBackup(m_path);
+        m_backupWritten = true;
+    }
     std::vector<std::string> lines;
     for (const Product& p : products) lines.push_back(ProductSerialiser::format(p));
     return RecordFile::writeAllLines(m_path, lines);

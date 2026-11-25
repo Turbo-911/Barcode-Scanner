@@ -3,8 +3,25 @@
 ================================================================================
 
 All test BMP files in this directory are valid Interleaved 2 of 5 (ITF) barcodes
-matching the team's ITF encoding specification (src/encoder.cpp and README.md).
-They are 8-bit grayscale BMPs directly readable by loadBMP (src/BMP.cpp).
+matching the team's ITF encoding specification (src/barcode/encoder.cpp and
+README.md). They are 8-bit grayscale BMPs directly readable by loadBMP
+(src/common/BMP.cpp).
+
+Run them - they are no longer just files on disk (D-13):
+  barcode_studio_gui.exe --selftest
+decodes every stress file below, plus the in-memory round trip and a
+decode-back check of every barcode in barcodes/. The console menu
+(--console, option 4) runs the same in-memory + stress-file checks.
+The POS service checks live in tests/pos_selftest.cpp; build and run
+them in a fresh temp folder with:
+  mingw32-make -f Makefile.gui test
+Never run pos_selftest from the repo root - it seeds (truncates)
+Data/*.txt in its working directory, and it refuses to run against a
+non-empty catalogue.
+
+There is no setup_qa.bat. To regenerate a barcode image, use the GUI
+Generator screen or the console menu (--console, option 1); the
+encoder is src/barcode/encoder.cpp, the decoder src/barcode/Decoder.cpp.
 
 --------------------------------------------------------------------------------
 1. Standard Test Barcodes (decodable to distinct 6-digit numbers):
@@ -12,7 +29,6 @@ They are 8-bit grayscale BMPs directly readable by loadBMP (src/BMP.cpp).
 - barcode_123456.bmp  ->  Expected Decoded Digits: 123456 (Sequential ascending)
 - barcode_987654.bmp  ->  Expected Decoded Digits: 987654 (Sequential descending)
 - barcode_100000.bmp  ->  Expected Decoded Digits: 100000 (Trailing zeroes)
-- barcode_555555.bmp  ->  Expected Decoded Digits: 555555 (All identical digits)
 - barcode_999999.bmp  ->  Expected Decoded Digits: 999999 (Maximum allowed digits)
 - barcode_112233.bmp  ->  Expected Decoded Digits: 112233 (Paired digits)
 - barcode_246810.bmp  ->  Expected Decoded Digits: 246810 (Even progression)
@@ -35,6 +51,11 @@ They are 8-bit grayscale BMPs directly readable by loadBMP (src/BMP.cpp).
 - barcode_192837.bmp  ->  Expected Decoded Digits: 192837 (Interleaved extremes)
 - barcode_462819.bmp  ->  Expected Decoded Digits: 462819 (Arbitrary pattern)
 
+The barcode_*.bmp files in this folder are test images only. The
+product barcodes (one per product in Data/product.txt) live in
+barcodes/, which is the single directory for generated/product
+barcodes (D-37); Data/product.txt points there.
+
 --------------------------------------------------------------------------------
 2. QA Stress Test & Edge Case Barcodes:
 --------------------------------------------------------------------------------
@@ -44,7 +65,15 @@ They are 8-bit grayscale BMPs directly readable by loadBMP (src/BMP.cpp).
 - test_noisy.bmp      ->  Expected Decoded Digits: 888888 (Salt & pepper noise)
 - test_small.bmp      ->  Expected Decoded Digits: 314159 (Small module size: 2px)
 - test_large.bmp      ->  Expected Decoded Digits: 654321 (Large module size: 4px)
-- test_inverted.bmp   ->  Expected Decoded Digits: 765432 (Upside-down scanner test)
+- test_inverted.bmp   ->  Expected Decoded Digits: 123456 (Genuinely inverted polarity:
+                          every pixel of test_normal.bmp flipped, white-on-black.
+                          The old file was only a 180-degree rotation, the same
+                          case test_rotated.bmp already covered, so it tested
+                          nothing about inversion. The decoder tries the
+                          inverted scanline (255 - v) as a fallback.)
 
-To regenerate or add more barcodes, run `setup_qa.bat` from the root directory.
+NOTE on 555555: it is only the code inside test_blurry.bmp, a decode
+test with no product behind it. It is NOT White Sugar - White Sugar is
+145555 (Data/product.txt) - and it is no longer used as a demo barcode
+anywhere (D-10). The canonical demo barcodes are 145555 and 111001.
 ================================================================================

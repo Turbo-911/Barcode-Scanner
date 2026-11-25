@@ -15,7 +15,7 @@ namespace
 std::string CategoryService::addCategory(const std::string& id,
     const std::string& name, const std::string& acronym)
 {
-    if (!isTwoDigits(id)) return "bad-id";
+    if (!isTwoDigits(id) || id == "00") return "bad-id";  // D-20: "00" is not a category
     if (name.empty()) return "bad-name";
     if (acronym.empty()) return "bad-acronym";
 
@@ -51,12 +51,21 @@ std::string CategoryService::updateCategory(const std::string& id,
 
 std::string CategoryService::makeBarcode(const std::string& categoryId, int productId)
 {
+    // D-20: category "00" would start the barcode with a zero, which the
+    // team's own isValidCode rejects (first digit must be non-zero), so
+    // it is refused here. The tail is the FULL product id - the old
+    // productId % 10000 made 1001 and 11001 collide - so an id above
+    // 9999 cannot fit the 6-digit scheme at all and is refused (empty
+    // string) instead of silently colliding. Callers treat "" as
+    // "bad-category". Whether the category exists in PCategory.txt is
+    // checked by the callers that own the repository (ProductService
+    // add/update), since this static helper has no repo to ask.
+    if (!isTwoDigits(categoryId) || categoryId == "00") return std::string();
+    if (productId < 0 || productId > 9999) return std::string();
     std::ostringstream oss;
     oss << categoryId;
-    int tail = productId % 10000;
-    if (tail < 0) tail = -tail;
     oss.width(4);
     oss.fill('0');
-    oss << tail;
+    oss << productId;
     return oss.str();
 }

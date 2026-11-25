@@ -316,43 +316,4 @@ void PinkDropdown::drawList(sf::RenderTarget& target) const
     }
 }
 
-// ------------------------------------------------------------------- Toast
-ToastNotification::ToastNotification(sf::Font& font)
-    : m_font(font), m_success(true), m_remaining(0.0f)
-{
-}
-
-void ToastNotification::show(const std::string& message, bool success)
-{
-    m_message = message;
-    m_success = success;
-    m_remaining = 4.0f;
-}
-
-void ToastNotification::update(float deltaSeconds)
-{
-    m_remaining = std::max(0.0f, m_remaining - deltaSeconds);
-}
-
-bool ToastNotification::isVisible() const { return m_remaining > 0.0f; }
-
-void ToastNotification::draw(sf::RenderTarget& target, const sf::Vector2f& windowSize) const
-{
-    if (!isVisible()) return;
-    sf::Text measure(m_font, m_message, theme::scaledSize(13));
-    theme::applyTextScale(measure);
-    const float width = std::min(windowSize.x - 48.0f, theme::scaledBounds(measure).size.x + 32.0f);
-    const sf::Vector2f size(width, 46.0f);
-    const sf::Vector2f position(windowSize.x - size.x - 24.0f, windowSize.y - size.y - 24.0f);
-    theme::drawRoundedBox(target, position, size, 11.0f,
-        m_success ? theme::SuccessBackground : theme::ErrorBackground,
-        m_success ? theme::Success : theme::Error, 1.2f);
-    sf::Text text(m_font, m_message, theme::scaledSize(13));
-    theme::applyTextScale(text);
-    text.setFillColor(m_success ? theme::Success : theme::Error);
-    const sf::FloatRect b = theme::scaledBounds(text);
-    text.setPosition({position.x + 16.0f,
-        position.y + (size.y - b.size.y) / 2.0f - b.position.y});
-    target.draw(text);
-}
-}
+}  // namespace ui

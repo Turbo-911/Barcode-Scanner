@@ -5,14 +5,19 @@
 using namespace std;
 uint16_t readUInt16(ifstream& file)  // Read 2 bytes
 {
-    unsigned char bytes[2];
+    // D-27: zero-filled on a short read, so a truncated header can
+    // never hand uninitialised bytes back to the caller.
+    unsigned char bytes[2] = {0, 0};
     file.read((char*)bytes, 2);
+    if (file.gcount() != 2) return 0;
     return bytes[0] | (bytes[1] << 8);
 }
 uint32_t readUInt32(ifstream& file)   // Read 4 bytes
 {
-    unsigned char bytes[4];
+    // D-27: zero-filled on a short read, as above.
+    unsigned char bytes[4] = {0, 0, 0, 0};
     file.read((char*)bytes, 4);
+    if (file.gcount() != 4) return 0;
     return (uint32_t)bytes[0]| ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 void writeUInt16(ofstream& file, uint16_t value)  // Write 2 bytes
@@ -109,6 +114,15 @@ bool loadBMP(const string& path, Image& out) // Load BMP and convert it to grays
     {
         return false;
     }
+    // D-27: reject a file too short to hold even the headers before
+    // interpreting any width/height/pixelOffset from it.
+    file.seekg(0, ios::end);
+    const std::streamoff fileSize = file.tellg();
+    file.seekg(0, ios::beg);
+    if (fileSize < 54)
+    {
+        return false;
+    }
     // Check BMP signature
     char signature[2];
 
@@ -128,6 +142,22 @@ bool loadBMP(const string& path, Image& out) // Load BMP and convert it to grays
     uint32_t headerSize = readUInt32(file);
 
     if (headerSize < 40)
+    {
+        return false;
+    }
+
+    // D-27: a real BMP info header is 40, 56, 108 or 124 bytes; anything
+    // larger is not a header this reader understands (and bounding it
+    // keeps the pixelOffset arithmetic below from overflowing).
+    if (headerSize > 1024)
+    {
+        return false;
+    }
+
+    // D-27: the pixel data must start after the headers and inside
+    // the file - a crafted offset used to be trusted blindly.
+    if (pixelOffset < 14u + headerSize ||
+        pixelOffset > static_cast<uint32_t>(fileSize))
     {
         return false;
     }
@@ -164,6 +194,14 @@ bool loadBMP(const string& path, Image& out) // Load BMP and convert it to grays
     int actualHeight = height < 0 ? -height : height;
 
     uint64_t totalPixels = (uint64_t)width * actualHeight;
+
+    // D-27: sane dimensions only - a crafted header claiming
+    // 100000x100000 is rejected with an error here, not with a
+    // std::bad_alloc while allocating the pixel buffer below.
+    if (width > 10000 || actualHeight > 10000 || totalPixels > 100000000ULL)
+    {
+        return false;
+    }
 
     if (totalPixels > out.pixels.max_size())
     {
@@ -213,6 +251,15 @@ bool loadBMP(const string& path, Image& out) // Load BMP and convert it to grays
     }
 
     uint64_t rowSize = ((uint64_t)width * bitsPerPixel + 31) / 32 * 4;
+
+    // D-27: the file must actually contain all the pixel rows it
+    // claims, or the row reads below would fail halfway through.
+    if (pixelOffset + rowSize * (uint64_t)actualHeight >
+        static_cast<uint64_t>(fileSize))
+    {
+        return false;
+    }
+
     vector<unsigned char> row(rowSize);
 
     out.width = width;

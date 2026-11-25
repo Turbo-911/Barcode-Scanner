@@ -25,4 +25,11 @@ class BillCalculator
 public:
     static Totals calculate(const std::vector<CartLine>& lines);
     static double lineTotal(const CartLine& line);  // payable share of one line
+    // Round to whole paisa (2 decimals). Applied at every step of every
+    // payable computation so the written fields always sum exactly (D-32).
+    static double round2(double value);
+    // THE payable formula (requirement 8): totals payable after the two
+    // bill-level rupee discounts, rounded, never below zero.
+    static double payableAfterDiscounts(const Totals& totals,
+        double seasonalDiscount, double specialDiscount);
 };

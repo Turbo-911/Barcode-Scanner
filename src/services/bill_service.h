@@ -21,9 +21,12 @@ public:
     // Build the ONE Bill row for a checked-out order. The seasonal and
     // special discounts are rupee AMOUNTS already applied to the total;
     // the caller computes them (see OrderService::checkout).
-    Bill buildBill(const Order& order, const Totals& totals, const std::string& billId,
-        double seasonalDiscount, double specialDiscount,
-        double amountReceived) const;
+    // Returns std::nullopt when the money does not add up: the written
+    // fields must sum to the written payable (D-32), and a bill that
+    // fails that check is refused instead of silently clamped.
+    std::optional<Bill> buildBill(const Order& order, const Totals& totals,
+        const std::string& billId, double seasonalDiscount,
+        double specialDiscount, double amountReceived) const;
 
     // Build the per-line BillDetail rows for the same order.
     std::vector<BillDetail> buildDetails(const std::vector<CartLine>& lines,

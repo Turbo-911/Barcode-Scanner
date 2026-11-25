@@ -18,6 +18,11 @@ public:
 
     std::string setActive(const std::string& startDate, bool isActive);
 
+    // D-17: toggle by the (start, end) date pair - the exact season,
+    // even when two seasons share a start date. New callers use this.
+    std::string setActive(const std::string& startDate,
+        const std::string& endDate, bool isActive);
+
 private:
     ISeasonsRepository& m_repo;
 };

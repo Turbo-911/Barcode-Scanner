@@ -12,6 +12,8 @@ public:
     virtual std::vector<BillDetail> loadForBill(const std::string& billId) = 0;
     virtual std::vector<BillDetail> loadAll() = 0;
     virtual std::string filePath() const = 0;
+    // Lines lost on the last loadAll (D-03). 0 when the last load was clean.
+    virtual int droppedLines() const { return 0; }
 };
 
 class BillDetailFileRepository : public IBillDetailRepository
@@ -23,6 +25,9 @@ public:
     std::vector<BillDetail> loadForBill(const std::string& billId) override;
     std::vector<BillDetail> loadAll() override;
     std::string filePath() const override { return m_path; }
+    int droppedLines() const override { return m_droppedLines; }
 private:
     std::string m_path;
+    int m_droppedLines = 0;
+    bool m_backupWritten = false;
 };

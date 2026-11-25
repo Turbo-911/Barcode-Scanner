@@ -175,7 +175,10 @@ namespace
         }
     }
 
-    // Tries to decode a 1D grayscale line across multiple thresholding strategies
+    // Tries to decode a 1D grayscale line across multiple thresholding strategies.
+    // The same thresholds are tried on the line as-is and then on the
+    // inverted line (255 - v), so a white-on-black barcode decodes too
+    // (D-27). Returns false when neither polarity yields 37 valid runs.
     bool decodeScanline(const std::vector<unsigned char>& line, std::string& outDigits)
     {
         if (line.size() < 37)
@@ -183,97 +186,116 @@ namespace
             return false;
         }
 
-        int minVal = 255;
-        int maxVal = 0;
-        long long sum = 0;
-        for (size_t i = 0; i < line.size(); ++i)
+        // One polarity attempt: thresholds derived from this line's own
+        // min/max/mean, then a search for 37 alternating runs.
+        auto tryPolarity = [&](const std::vector<unsigned char>& values) -> bool
         {
-            int v = line[i];
-            if (v < minVal)
+            int minVal = 255;
+            int maxVal = 0;
+            long long sum = 0;
+            for (size_t i = 0; i < values.size(); ++i)
             {
-                minVal = v;
-            }
-            if (v > maxVal)
-            {
-                maxVal = v;
-            }
-            sum += v;
-        }
-
-        // Insufficient contrast
-        if (maxVal - minVal < 25)
-        {
-            return false;
-        }
-
-        int midThresh = (minVal + maxVal) / 2;
-        int avgThresh = static_cast<int>(sum / line.size());
-        int lowThresh = (minVal * 2 + maxVal) / 3;
-        int highThresh = (minVal + maxVal * 2) / 3;
-
-        int candidateThresholds[4] = { midThresh, avgThresh, lowThresh, highThresh };
-
-        std::vector<Run> runs;
-        runs.reserve(line.size());
-
-        for (int tIdx = 0; tIdx < 4; ++tIdx)
-        {
-            int thresh = candidateThresholds[tIdx];
-            extractRuns(line, thresh, runs);
-
-            if (runs.size() < 37)
-            {
-                continue;
+                int v = values[i];
+                if (v < minVal)
+                {
+                    minVal = v;
+                }
+                if (v > maxVal)
+                {
+                    maxVal = v;
+                }
+                sum += v;
             }
 
-            // Look for any slice of 37 consecutive alternating runs starting with Black
-            for (size_t i = 0; i + 37 <= runs.size(); ++i)
+            // Insufficient contrast
+            if (maxVal - minVal < 25)
             {
-                if (!runs[i].isBlack)
+                return false;
+            }
+
+            int midThresh = (minVal + maxVal) / 2;
+            int avgThresh = static_cast<int>(sum / values.size());
+            int lowThresh = (minVal * 2 + maxVal) / 3;
+            int highThresh = (minVal + maxVal * 2) / 3;
+
+            int candidateThresholds[4] = { midThresh, avgThresh, lowThresh, highThresh };
+
+            std::vector<Run> runs;
+            runs.reserve(values.size());
+
+            for (int tIdx = 0; tIdx < 4; ++tIdx)
+            {
+                int thresh = candidateThresholds[tIdx];
+                extractRuns(values, thresh, runs);
+
+                if (runs.size() < 37)
                 {
                     continue;
                 }
-                bool alternating = true;
-                for (size_t k = 0; k < 37; ++k)
+
+                // Look for any slice of 37 consecutive alternating runs starting with Black
+                for (size_t i = 0; i + 37 <= runs.size(); ++i)
                 {
-                    bool expectedBlack = (k % 2 == 0);
-                    if (runs[i + k].isBlack != expectedBlack)
+                    if (!runs[i].isBlack)
                     {
-                        alternating = false;
-                        break;
+                        continue;
+                    }
+                    bool alternating = true;
+                    for (size_t k = 0; k < 37; ++k)
+                    {
+                        bool expectedBlack = (k % 2 == 0);
+                        if (runs[i + k].isBlack != expectedBlack)
+                        {
+                            alternating = false;
+                            break;
+                        }
+                    }
+
+                    if (!alternating)
+                    {
+                        continue;
+                    }
+
+                    int forwardRuns[37];
+                    int reverseRuns[37];
+                    for (int k = 0; k < 37; ++k)
+                    {
+                        forwardRuns[k] = runs[i + k].length;
+                        reverseRuns[k] = runs[i + 36 - k].length;
+                    }
+
+                    // Forward scan
+                    if (tryDecode37Runs(forwardRuns, outDigits))
+                    {
+                        return true;
+                    }
+
+                    // Reversed scan (for upside-down 180-deg barcodes)
+                    std::string revDigits;
+                    if (tryDecode37Runs(reverseRuns, revDigits))
+                    {
+                        outDigits = revDigits;
+                        return true;
                     }
                 }
-
-                if (!alternating)
-                {
-                    continue;
-                }
-
-                int forwardRuns[37];
-                int reverseRuns[37];
-                for (int k = 0; k < 37; ++k)
-                {
-                    forwardRuns[k] = runs[i + k].length;
-                    reverseRuns[k] = runs[i + 36 - k].length;
-                }
-
-                // Forward scan
-                if (tryDecode37Runs(forwardRuns, outDigits))
-                {
-                    return true;
-                }
-
-                // Reversed scan (for upside-down 180-deg barcodes)
-                std::string revDigits;
-                if (tryDecode37Runs(reverseRuns, revDigits))
-                {
-                    outDigits = revDigits;
-                    return true;
-                }
             }
+
+            return false;
+        };
+
+        // Normal polarity first (the common case, and the fast path).
+        if (tryPolarity(line))
+        {
+            return true;
         }
 
-        return false;
+        // Inverted polarity: white bars on a black background.
+        std::vector<unsigned char> inverted(line.size());
+        for (size_t i = 0; i < line.size(); ++i)
+        {
+            inverted[i] = static_cast<unsigned char>(255 - line[i]);
+        }
+        return tryPolarity(inverted);
     }
 
 } // namespace
@@ -374,7 +396,10 @@ bool decodeBarcode(const Image& img, string& digitsOut)
         }
     }
 
-    // 3. Try diagonal scanlines (for rotated barcodes, e.g. 10-30 degrees)
+    // 3. Try diagonal scanlines (for slightly rotated barcodes).
+    // Honest limit (D-27): the offsets below give a maximum drift of
+    // 70 px over a 249 px wide image, about 16 degrees; a barcode
+    // tilted much further than that has no scanline here and fails.
     std::vector<int> dyOffsets = { -15, 15, -25, 25, -35, 35 };
     for (size_t d = 0; d < dyOffsets.size(); ++d)
     {

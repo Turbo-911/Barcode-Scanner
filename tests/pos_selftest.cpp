@@ -2,7 +2,12 @@
 // Run it from an EMPTY folder: it seeds its own Data files there, runs
 // checkout / hold / resume / paid-order-edit cycles through the real
 // services and repositories, and checks the Data/*.txt files produced.
-// Build (from the project root):
+// It REFUSES to run when Data/product.txt in the current directory
+// already holds more than the 2 seeded products (D-13) - running it
+// from the repo root would overwrite the real catalogue.
+// Build + run in a fresh temp dir (from the project root):
+//   mingw32-make -f Makefile.gui test
+// Manual build (from the project root):
 //   g++ -std=c++17 -Isrc tests/pos_selftest.cpp src/persistence/*.cpp src/services/*.cpp src/domain/*.cpp src/common/string_utils.cpp src/common/date_time.cpp -o pos_selftest
 #include "persistence/i_order_repo.h"
 #include "persistence/i_bill_repo.h"
@@ -23,8 +28,11 @@
 #include "services/seasons_service.h"
 #include "common/string_utils.h"
 #include "common/date_time.h"
+#include "common/pin_hash.h"
+#include "persistence/product_serialiser.h"
 
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <filesystem>
 #include <thread>
@@ -44,14 +52,39 @@ bool near(double a, double b) { return std::fabs(a - b) < 0.001; }
 
 int main()
 {
+    // D-13 CWD guard: refuse to run when Data/product.txt in the
+    // current directory already holds more than the 2 seeded
+    // products - the seeding below truncates that file, so running
+    // from the repo root would shrink the real 24-product catalogue
+    // to 2 products with no backup. Run from an empty folder (the
+    // Makefile.gui `test` target does this for you).
+    {
+        std::ifstream existing("Data/product.txt");
+        if (existing)
+        {
+            std::size_t lines = 0;
+            std::string line;
+            while (std::getline(existing, line))
+                if (!line.empty()) ++lines;
+            if (lines > 2)
+            {
+                std::cout << "REFUSING TO RUN: Data/product.txt in the current directory already has "
+                          << lines << " products.\n"
+                          << "pos_selftest seeds its own Data files and would OVERWRITE them.\n"
+                          << "Run it from an empty folder instead (mingw32-make -f Makefile.gui test).\n";
+                return 2;
+            }
+        }
+    }
+
     {
         std::filesystem::create_directories("Data");
         std::ofstream cats("Data/PCategory.txt");
         cats << "11 Dairy MLK #\n";
         cats << "12 Bakery BAK #\n";
         std::ofstream seed("Data/product.txt");
-        seed << "1001 111001 MILK500 Fresh_Milk count 180.00 10.00 0.00 40 tests/barcode_111001.bmp 11 #\n";
-        seed << "1002 129876 BREAD Branded_Bread count 120.00 5.00 10.00 25 tests/barcode_129876.bmp 12 #\n";
+        seed << "1001 111001 MILK500 Fresh_Milk count 180.00 10.00 0.00 40 barcodes/barcode_111001.bmp 11 #\n";
+        seed << "1002 129876 BREAD Branded_Bread count 120.00 5.00 10.00 25 barcodes/barcode_129876.bmp 12 #\n";
         // One always-on season at 10% so the seasonal path is exercised.
         std::ofstream seasons("Data/Seasons.txt");
         seasons << "2020-01-01 2030-12-31 10.00 true #\n";
@@ -214,7 +247,7 @@ int main()
         const std::size_t billRows = RecordFile::readAllLines("Data/bill.txt").size();
         const auto milkBefore = products.findByBarcode("111001");
         CompletedBill rb;
-        check(orders.checkout("Hold Customer", "", "paid", "cash", "-", 0.0, 0.0, rb).empty(),
+        check(orders.checkout("Hold Customer", "", "paid", "cash", "-", 0.0, 171.0, rb).empty(),
             "checkout after resume succeeds");
         check(rb.order.id == doneId, "resumed checkout keeps the same Order Id");
         check(rb.bill.orderId == doneId, "the bill points at the resumed order");
@@ -252,6 +285,193 @@ int main()
             "a paid order can be LOADED without manager approval");
         check(orders.editPaidOrder(saved.order.id, false, peek) == "not-approved",
             "the edit gate itself still refuses without approval");
+    }
+
+    // ---- Batch A (v35) checks -------------------------------------
+    // D-04: real calendar maths, not y*372+m*31+d.
+    check(datetime::daysBetween("2026-04-30", "2026-05-07") == 7,
+        "date: 30 Apr -> 7 May is really 7 days (fake maths said 8)");
+    check(datetime::daysBetween("2026-02-28", "2026-03-06") == 6,
+        "date: 28 Feb -> 6 Mar is really 6 days (fake maths said 9)");
+    check(datetime::daysBetween("2026-02-28", "2026-03-01") == 1,
+        "date: 28 Feb -> 1 Mar is 1 day");
+    check(datetime::daysBetween("2026-11-26", "2026-11-26") == 0,
+        "date: same day is 0 days apart");
+    check(datetime::daysBetween("2026-13-40", "2026-11-26") == INT_MIN,
+        "date: invalid date gives INT_MIN");
+
+    // D-06: underpayment and bad status/merchant are refused, nothing
+    // is silently rewritten to full payment.
+    check(orders.addLine("111001", 1).empty(), "add 1x milk for underpayment test");
+    CompletedBill under;
+    check(orders.checkout("Under Test", "", "paid", "cash", "-", 0.0, 100.0, under)
+            == "underpayment", "underpayment (100 on a 171 bill) refused");
+    check(orders.checkout("Under Test", "", "paid", "cash", "-", 0.0, 0.0, under)
+            == "underpayment", "amount received 0 is not silently full payment");
+    check(orders.checkout("Under Test", "", "on-hold", "cash", "-", 0.0, 171.0, under)
+            == "bad-status", "checkout with status on-hold writes no bill");
+    check(orders.checkout("Under Test", "", "paid", "card", "HBL", 0.0, 171.0, under)
+            == "bad-payment", "card merchant outside ABL/MCB/Meezan refused");
+    check(orders.checkout("Under Test", "", "paid", "wallet", "JC", 0.0, 171.0, under)
+            == "bad-payment", "wallet merchant outside JazzCash/EasyPaisa/Raast refused");
+    check(orders.checkout("Under Test", "", "paid", "cash", "JazzCash", 0.0, 171.0, under)
+            == "bad-payment", "cash with a merchant refused");
+    check(RecordFile::readAllLines("Data/bill.txt").size() == 2,
+        "refused checkouts wrote no bill");
+    orders.clear();
+
+    // D-06/D-22 in holdOrder too.
+    check(orders.addLine("111001", 1).empty(), "add 1x milk for hold validation test");
+    check(orders.holdOrder("Hold Bad", "", "wallet", "JC") == "bad-payment",
+        "hold with a bad wallet merchant refused");
+    orders.clear();
+
+    // D-15: changeQuantity now reports instead of silently doing nothing.
+    check(orders.addLine("111001", 1).empty(), "add 1x milk for changeQuantity test");
+    check(orders.changeQuantity(0, 100) == "low-stock",
+        "changeQuantity over stock is reported, not silent");
+    check(orders.changeQuantity(0, 1).empty() && orders.lines().at(0).quantity == 2,
+        "changeQuantity within stock succeeds");
+    check(orders.changeQuantity(99, 1) == "bad-index",
+        "changeQuantity out of range is reported");
+    orders.clear();
+
+    // D-20/D-21: barcode and product validation.
+    check(CategoryService::makeBarcode("00", 1001).empty(),
+        "barcode: category 00 refused");
+    check(CategoryService::makeBarcode("11", 11001).empty(),
+        "barcode: id 11001 cannot fit the 6-digit scheme (no % 10000 collision)");
+    check(CategoryService::makeBarcode("11", 1001) == "111001",
+        "barcode: full product id in the tail");
+    check(categories.addCategory("00", "Zero", "ZERO") == "bad-id",
+        "category 00 refused");
+    {
+        Product bad;
+        bad.id = 1003; bad.categoryId = "11"; bad.name = "Tea";
+        bad.acronym = "TEA500XXX";  // 9 chars, over the 8 limit
+        bad.unit = "count"; bad.unitPrice = 50.0; bad.taxPerUnit = 0.0;
+        bad.discountPerUnit = 0.0; bad.availableQuantity = 10;
+        check(products.addProduct(bad) == "bad-fields",
+            "product: acronym over 8 chars refused");
+        bad.acronym = "TEA500";
+        bad.unit = "litres";
+        check(products.addProduct(bad) == "bad-fields",
+            "product: unit outside count/weight refused");
+        bad.unit = "count"; bad.unitPrice = -5.0;
+        check(products.addProduct(bad) == "bad-fields",
+            "product: negative price refused");
+        bad.unitPrice = 50.0; bad.discountPerUnit = 60.0;
+        check(products.addProduct(bad) == "bad-fields",
+            "product: discount above price refused");
+        bad.discountPerUnit = 0.0; bad.availableQuantity = -1;
+        check(products.addProduct(bad) == "bad-fields",
+            "product: negative quantity refused");
+    }
+
+    // D-17: overlapping active seasons and a 100% season are refused.
+    check(seasonsService.addSeason("2026-01-01", "2026-12-31", 5.0, true) == "overlap",
+        "season: overlapping an active season refused");
+    check(seasonsService.addSeason("2026-01-01", "2026-12-31", 100.0, false) == "bad-percent",
+        "season: 100% discount refused");
+
+    // D-05: the manager PIN is checked by hash, never stored in plain
+    // text. The correct PIN itself is never written in code - not even
+    // in a test - so only rejection of wrong PINs is asserted here;
+    // acceptance of the real PIN is exercised through the GUI prompt.
+    check(pin_hash::fnv1a("0000") != pin_hash::kManagerPinHash,
+        "pin: a wrong PIN hashes differently from the stored hash");
+    check(!pin_hash::matchesManagerPin("0000"), "pin: wrong PIN does not match");
+    check(!pin_hash::matchesManagerPin(""), "pin: empty PIN does not match");
+    check(pin_hash::fnv1a("") == 2166136261u,
+        "pin: FNV-1a of empty input is the offset basis");
+
+    // D-19: a genuine Phase 2 product line (11 fields, no categoryId)
+    // parses, with the category derived from the barcode.
+    {
+        const auto p2 = ProductSerialiser::parse(
+            "1003 131000 TEA500 Tea count 50.00 0.00 0.00 10 barcodes/barcode_131000.bmp #");
+        check(p2 && p2->categoryId == "13",
+            "product: Phase 2 line parses, category 13 from barcode");
+    }
+
+    // D-01: two checkouts in the same second must still get distinct ids.
+    {
+        check(orders.addLine("111001", 1).empty(), "add 1x milk for id test 1");
+        CompletedBill first;
+        check(orders.checkout("Id Test 1", "", "paid", "cash", "-", 0.0, 171.0, first).empty(),
+            "same-second checkout 1 succeeds");
+        check(orders.addLine("111001", 1).empty(), "add 1x milk for id test 2");
+        CompletedBill second;
+        check(orders.checkout("Id Test 2", "", "paid", "cash", "-", 0.0, 171.0, second).empty(),
+            "same-second checkout 2 succeeds");
+        check(first.order.id != second.order.id,
+            "same-second checkouts get distinct Order Ids");
+        check(first.billId != second.billId,
+            "same-second checkouts get distinct Bill Ids");
+    }
+
+    // D-03: a corrupt line is counted, reported, and backed up - not
+    // silently deleted on the next save.
+    {
+        std::ofstream bad("Data/product.txt", std::ios::app);
+        bad << "THIS IS NOT A PRODUCT LINE\n";
+    }
+    check(products.listAll().size() == 2, "dropped line: good products still load");
+    check(productRepo.droppedLines() == 1, "dropped line: 1 unparsable line counted");
+    check(productRepo.saveAll(products.listAll()), "dropped line: save succeeds");
+    check(std::filesystem::exists("Data/product.txt.bak"),
+        "dropped line: .bak copy written before the save");
+    {
+        bool bakHasBadLine = false;
+        for (const std::string& line : RecordFile::readAllLines("Data/product.txt.bak"))
+            if (line == "THIS IS NOT A PRODUCT LINE") bakHasBadLine = true;
+        check(bakHasBadLine, "dropped line: .bak holds the unparsable line");
+    }
+    check(products.listAll().size() == 2 && productRepo.droppedLines() == 0,
+        "dropped line: file is clean again after the save");
+
+    // D-08/D-11: incomplete/completed reports are order-based, archiving
+    // goes through the service, and the custom From>To error is explicit.
+    check(orders.addLine("111001", 1).empty(), "add 1x milk for archive test");
+    check(orders.holdOrder("Archive Me", "", "cash", "-").empty(), "hold for archive test");
+    std::string archiveId;
+    for (const std::string& line : RecordFile::readAllLines("Data/order.txt"))
+        if (const auto o = OrderSerialiser::parse(line); o && o->status == "on-hold")
+            archiveId = o->id;
+    check(!archiveId.empty(), "held order exists to archive");
+    check(reports.incompleteOrders().rows.size() == 1,
+        "report: held order is visible in incomplete orders");
+    check(orders.archiveOrder(archiveId).empty(), "archiveOrder succeeds");
+    check(orders.archiveOrder("99999999") == "not-found",
+        "archiveOrder on a missing order reports not-found");
+    check(reports.incompleteOrders().rows.size() == 0,
+        "report: archived order leaves incomplete orders");
+    check(reports.completedOrders().rows.size() == 5,
+        "report: completed orders lists the 4 paid + 1 archived order");
+    {
+        const ReportService::Table badRange = reports.cashSales("custom",
+            "2026-12-31", "2026-01-01");
+        check(badRange.rows.empty()
+                && badRange.summary.rfind("Error:", 0) == 0,
+            "report: custom From>To returns an error, not an empty table");
+    }
+    {
+        const ReportService::Table sold = reports.topTenSoldItems();
+        check(sold.rows.size() == 1 && sold.rows.at(0).at(1) == "MILK500"
+                && sold.rows.at(0).at(2) == "4",
+            "report: top sold aggregates by product over paid bills (MILK500 x4)");
+        const ReportService::Table all = reports.allSalesWithDiscounts();
+        check(all.rows.size() == 4
+                && all.summary.find("Total discount:") != std::string::npos,
+            "report: all sales lists paid bills only, with a total discount");
+    }
+
+    // D-02: the data is consistent - no orphans anywhere.
+    {
+        const DataHealth health = orders.dataHealth();
+        check(health.ordersWithoutBill == 0 && health.billsWithoutOrder == 0
+                && health.orphanBillDetails == 0,
+            "data health: no paid order without a bill, no orphan bills/details");
     }
 
     std::cout << (failures == 0 ? "ALL POS TESTS PASSED\n" : "SOME TESTS FAILED\n");

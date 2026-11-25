@@ -25,6 +25,7 @@ A desktop application written in C++ for a small store: it converts a six-digit 
 - **Inventory:** the manager can view and update stock at any time, and add or edit any product.
 - **Split bill format:** `Data/bill.txt` holds one line per bill (totals, amount received, balance returned, seasonal and special discounts); the per-product lines live in `Data/BillDetail.txt`.
 - **Discounts:** seasonal discounts from manager-configured seasons in `Data/Seasons.txt` apply automatically at billing; a special discount of up to 8% can be given at checkout.
+  - Worked example (milk + bread basket): Fresh Milk x2 (180.00 each) + Branded Bread x1 (120.00) is 480.00 without tax, tax 25.00, product discount 10.00 — **495.00 before any season**. The seasonal discount is 10% of (without tax + tax − product discount), so inside the active 10% season it takes 49.50 off and the same basket is **445.50**. Do not quote 495.00 for a bill raised inside a season.
 - **PDF bills:** a bill can be printed as a PDF by the cashier or the manager.
 - **Roles:** cashier and manager features are provided separately through the UI.
 - **Manager reports:** incomplete and completed orders with totals, cash sales (daily / weekly / monthly / yearly / custom period), all sales with discounts, top 10 most sold items and top 10 items by remaining stock.
@@ -140,7 +141,8 @@ On top of the Phase 1 barcode core, the GUI is a small store POS:
   bill on screen, and reduces stock.
 - **Products screen:** the full product list with quantities in stock,
   refreshed from `Data/product.txt`.
-- The design follows SRP / OCP throughout — see `docs/DESIGN.md`.
+- The design aims for SRP / OCP — see `docs/DESIGN.md` for an honest
+  account of where that holds and where it does not yet.
 
 ## Phase 3 — PoS v2
 
@@ -211,8 +213,9 @@ The console program (`--console`) shows a menu:
   Phase 3 flows (categories, seasonal discount, the 8% special cap,
   hold/resume, paid-order edit, reports, PDF output).
 - The images in `tests/` cover normal, blurry, rotated, noisy,
-  inverted and different-size barcodes, plus one barcode image per
-  product in the catalogue.
+  inverted and different-size barcodes, and `--selftest` decodes
+  every one of them (plus a decode-back check of `barcodes/`).
+  The product barcode images live in `barcodes/`, not `tests/`.
 
 ## Roles For Phase 1
 
@@ -230,8 +233,10 @@ The console program (`--console`) shows a menu:
 - Image files must be BMP.
 - Heavily blurred, rotated, or low-contrast images may not decode.
 - Camera support depends on the Windows camera APIs available on the machine.
-- Order and Bill Ids are time-based (HHMMSS + day), so two checkouts
-  within the same second would generate the same id.
+- Order and Bill Ids are time-based (HHMMSS + day), but checkout
+  and hold check the files for a collision and regenerate the Id
+  when one is found, so two checkouts within the same second still
+  get distinct Ids.
 
 ## License
 

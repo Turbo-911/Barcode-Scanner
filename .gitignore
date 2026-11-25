@@ -66,3 +66,14 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Build objects for the incremental Makefile.gui build.
+build_obj/
+
+# Generated at runtime: bill PDFs (and the pos_selftest PDF folder).
+bills/
+bills_out/
+
+# NOTE (D-35): barcodes/*.bmp is deliberately NOT ignored. Generated
+# product barcodes live in barcodes/ and must be tracked, so a fresh
+# clone has the product images the catalogue points at.

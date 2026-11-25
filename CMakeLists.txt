@@ -50,14 +50,30 @@ add_executable(barcode_studio_gui
 target_include_directories(barcode_studio_gui PRIVATE src)
 target_link_libraries(barcode_studio_gui PRIVATE SFML::Graphics SFML::Window SFML::System)
 
+# D-35: aligned with Makefile.gui - optimised build, and the same
+# Windows system libraries (uuid included, as in Makefile.gui).
+if(NOT MSVC)
+    target_compile_options(barcode_studio_gui PRIVATE -O2)
+endif()
+
 if(WIN32)
     # Media Foundation (camera) + common dialog (Browse button)
+    target_compile_definitions(barcode_studio_gui PRIVATE _WIN32)
     target_link_libraries(barcode_studio_gui PRIVATE
-        mf mfplat mfreadwrite mfuuid ole32 oleaut32 comdlg32)
+        mf mfplat mfreadwrite mfuuid ole32 oleaut32 comdlg32 uuid)
 endif()
 
 # The GUI loads its bundled font from assets/ next to the executable.
+# D-35: Data/ and barcodes/ are copied too, so the CMake layout runs
+# from its own copy of the shop data and the product barcodes.
+# bills/ is deliberately NOT copied: PDFs are generated at runtime.
 add_custom_command(TARGET barcode_studio_gui POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/assets
-        $<TARGET_FILE_DIR:barcode_studio_gui>/assets)
+        $<TARGET_FILE_DIR:barcode_studio_gui>/assets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/Data
+        $<TARGET_FILE_DIR:barcode_studio_gui>/Data
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/barcodes
+        $<TARGET_FILE_DIR:barcode_studio_gui>/barcodes)

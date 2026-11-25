@@ -23,6 +23,7 @@
 #include <iostream>
 #include <cstring>
 #include <iomanip>
+#include <new>
 
 #include "camera/camera.h"
 
@@ -82,6 +83,10 @@ void logDeviceName(IMFActivate* device, UINT32 index)
 }
 }
 
+// D-34: EVERY member is initialised here. The Media Foundation
+// constructor used to leave m_captureWindow, m_latestFrame,
+// m_frameWidth, m_frameHeight and m_frameReady uninitialised
+// (the Video-for-Windows constructor already initialised them).
 Camera::Camera()
     : m_pSourceReader(NULL)
     , m_width(0)
@@ -91,6 +96,11 @@ Camera::Camera()
     , m_isInitialized(false)
     , m_comInitialized(false)
     , m_mfStarted(false)
+    , m_captureWindow(NULL)
+    , m_latestFrame()
+    , m_frameWidth(0)
+    , m_frameHeight(0)
+    , m_frameReady(false)
 {
 }
 
@@ -189,19 +199,29 @@ bool Camera::initialize()
         }
     }
 
-    // Activate the primary capture device
+    // Activate a capture device. D-12: if device 0 is busy or blocked
+    // by privacy settings, try the next enumerated device once before
+    // giving up, instead of failing on the first device outright.
     IMFMediaSource* pMediaSource = NULL;
-    if (ppDevices[0] == NULL)
+    hr = E_FAIL;
+    for (UINT32 dev = 0; dev < deviceCount && dev < 2 && pMediaSource == NULL; ++dev)
     {
-        std::cerr << "[Camera] Device 0 is null; cannot activate a capture source.\n";
-        CoTaskMemFree(ppDevices);
-        cleanup();
-        return false;
-    }
-    hr = ppDevices[0]->ActivateObject(IID_PPV_ARGS(&pMediaSource));
-    if (FAILED(hr))
-    {
-        logHresult("IMFActivate::ActivateObject(IMFMediaSource)", hr);
+        if (ppDevices[dev] == NULL)
+        {
+            continue;
+        }
+        hr = ppDevices[dev]->ActivateObject(IID_PPV_ARGS(&pMediaSource));
+        if (FAILED(hr))
+        {
+            logHresult("IMFActivate::ActivateObject(IMFMediaSource)", hr);
+            std::cerr << "[Camera] Device " << dev
+                      << " activation failed; trying the next device.\n";
+            pMediaSource = NULL;
+        }
+        else
+        {
+            std::cerr << "[Camera] Using video capture device " << dev << ".\n";
+        }
     }
 
     // Release all device activator objects
@@ -358,6 +378,28 @@ bool Camera::initialize()
         return false;
     }
 
+    // D-34: fail loudly, naming the format, when the camera negotiates
+    // a format this code cannot convert - instead of continuing and
+    // later copying compressed bytes into the frame as if they were
+    // pixels. Supported: RGB32, ARGB32, YUY2, NV12, RGB24.
+    if (subtype != MFVideoFormat_RGB32 && subtype != MFVideoFormat_ARGB32 &&
+        subtype != MFVideoFormat_YUY2 && subtype != MFVideoFormat_NV12 &&
+        subtype != MFVideoFormat_RGB24)
+    {
+        char fourcc[5];
+        fourcc[0] = static_cast<char>(subtype.Data1 & 0xFF);
+        fourcc[1] = static_cast<char>((subtype.Data1 >> 8) & 0xFF);
+        fourcc[2] = static_cast<char>((subtype.Data1 >> 16) & 0xFF);
+        fourcc[3] = static_cast<char>((subtype.Data1 >> 24) & 0xFF);
+        fourcc[4] = '\0';
+        std::cerr << "[Camera] Unsupported camera format '" << fourcc
+                  << "' (FourCC 0x" << std::hex << subtype.Data1 << std::dec
+                  << "); its frames cannot be converted to grayscale.\n";
+        pCurrentType->Release();
+        cleanup();
+        return false;
+    }
+
     LONG stride = 0;
     hr = pCurrentType->GetUINT32(MF_MT_DEFAULT_STRIDE, (UINT32*)&stride);
     if (FAILED(hr))
@@ -378,10 +420,16 @@ bool Camera::initialize()
         {
             stride = (LONG)width;
         }
-        else
-        {
-            stride = (LONG)(width * 4);
-        }
+        // No guessed fallback stride: every supported format above
+        // has its own branch, and unsupported formats were rejected
+        // just above, so reaching here with stride 0 is an error.
+    }
+    if (stride == 0)
+    {
+        std::cerr << "[Camera] Camera reported a zero stride; cannot read frames.\n";
+        pCurrentType->Release();
+        cleanup();
+        return false;
     }
 
     pCurrentType->Release();
@@ -506,10 +554,32 @@ unsigned char* Camera::readFrameRaw(int& outWidth, int& outHeight)
 
     int w = m_width;
     int h = m_height;
+    if (w <= 0 || h <= 0 || static_cast<long long>(w) * h > 100000000LL)
+    {
+        std::cerr << "[Camera] Unreasonable frame size " << w << "x" << h << ".\n";
+        pMediaBuffer->Unlock();
+        pMediaBuffer->Release();
+        pSample->Release();
+        return nullptr;
+    }
     int bufferSize = w * h;
 
-    // Strictly manual memory allocation for the grayscale pixel buffer
-    unsigned char* pGrayscale = new unsigned char[bufferSize];
+    // Strictly manual memory allocation for the grayscale pixel buffer.
+    // D-34: guarded - a failed allocation inside the worker thread must
+    // report and return null, never throw out of the thread.
+    unsigned char* pGrayscale = nullptr;
+    try
+    {
+        pGrayscale = new unsigned char[bufferSize];
+    }
+    catch (const std::bad_alloc&)
+    {
+        std::cerr << "[Camera] Out of memory allocating a frame buffer.\n";
+        pMediaBuffer->Unlock();
+        pMediaBuffer->Release();
+        pSample->Release();
+        return nullptr;
+    }
 
     LONG absStride = (m_stride < 0) ? -m_stride : m_stride;
 
@@ -570,15 +640,19 @@ unsigned char* Camera::readFrameRaw(int& outWidth, int& outHeight)
     }
     else
     {
-        DWORD copyCount = (currentLength < (DWORD)bufferSize) ? currentLength : (DWORD)bufferSize;
-        for (DWORD i = 0; i < copyCount; ++i)
-        {
-            pGrayscale[i] = pData[i];
-        }
-        for (int i = (int)copyCount; i < bufferSize; ++i)
-        {
-            pGrayscale[i] = 255;
-        }
+        // D-34: NO raw-copy fallback. An unsupported format must fail
+        // loudly with the format named instead of feeding compressed
+        // bytes to the decoder as if they were pixels. initialize()
+        // already rejects unsupported formats, so this branch is a
+        // guard, not a path - the frame is discarded, not faked.
+        std::cerr << "[Camera] Unsupported camera format (FourCC 0x"
+                  << std::hex << m_formatFourCC << std::dec
+                  << "); frame discarded, no pixels copied.\n";
+        delete[] pGrayscale;
+        pMediaBuffer->Unlock();
+        pMediaBuffer->Release();
+        pSample->Release();
+        return nullptr;
     }
 
     pMediaBuffer->Unlock();
@@ -746,7 +820,8 @@ bool Camera::initialize()
 
     m_captureWindow = window;
     capSetUserData(window, reinterpret_cast<LPARAM>(this));
-    if (!capDriverConnect(window, 0))
+    // D-12: if device 0 cannot connect, try the next device once.
+    if (!capDriverConnect(window, 0) && !capDriverConnect(window, 1))
     {
         std::cerr << "[Camera] capDriverConnect failed: no compatible webcam driver.\n";
         cleanup();

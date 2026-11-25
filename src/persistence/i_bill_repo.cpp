@@ -15,8 +15,13 @@ bool BillFileRepository::appendBill(const Bill& bill)
 std::vector<Bill> BillFileRepository::loadAll()
 {
     std::vector<Bill> bills;
+    m_droppedLines = 0;
+    m_backupWritten = false;
     for (const std::string& line : RecordFile::readAllLines(m_path))
+    {
         if (auto b = BillSerialiser::parse(line)) bills.push_back(*b);
+        else ++m_droppedLines;  // D-03: counted, reported, never silent
+    }
     return bills;
 }
 
@@ -33,6 +38,11 @@ int BillFileRepository::count()
 }
 bool BillFileRepository::saveAll(const std::vector<Bill>& bills)
 {
+    if (m_droppedLines > 0 && !m_backupWritten)
+    {
+        RecordFile::writeBackup(m_path);
+        m_backupWritten = true;
+    }
     std::vector<std::string> lines;
     for (const Bill& b : bills) lines.push_back(BillSerialiser::format(b));
     return RecordFile::writeAllLines(m_path, lines);

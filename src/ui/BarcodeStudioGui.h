@@ -18,7 +18,9 @@
 #include "services/category_service.h"
 #include "services/seasons_service.h"
 #include "services/report_service.h"
+#include "common/pin_hash.h"
 
+#include <chrono>
 #include <optional>
 
 #include <SFML/Graphics.hpp>
@@ -63,6 +65,8 @@ private:
     ui::PinkTextBox m_fileNameInput;
     ui::PinkButton m_generateRandom;
     ui::PinkButton m_generate;
+    ui::PinkDropdown m_genCategoryDrop;
+    std::string m_genMessage;
     std::string m_lastAutoFileName;
 
     // File scanner widgets
@@ -71,6 +75,7 @@ private:
     ui::PinkButton m_decode;
     bool m_decodeAttempted;
     bool m_decodeOk;
+    std::string m_fileMessage;
 
     // Camera widgets
     ui::PinkButton m_cameraToggleBtn;
@@ -83,8 +88,10 @@ private:
     struct TestRow { std::string code, result; bool ok; };
     std::vector<TestRow> m_testRows;
     int m_testPassed;
-
-    ui::ToastNotification m_toast;
+    DataHealth m_health;  // D-02/D-03: orphan counts + per-file dropped lines
+    bool m_healthReady{false};
+    int m_droppedProduct{0}, m_droppedOrder{0}, m_droppedOrderDetail{0};
+    int m_droppedBill{0}, m_droppedBillDetail{0}, m_droppedCategory{0}, m_droppedSeasons{0};
 
     // Barcode preview (generator + file scanner share it)
     sf::Texture m_previewTexture;
@@ -108,6 +115,9 @@ private:
     std::atomic<int> m_cameraAttempts{0};
     std::atomic<int> m_consistentCount{0};
     std::string m_cameraStatusUi{"Standby"};
+    std::atomic<bool> m_cameraFailed{false};  // set by the camera worker
+    std::string m_cameraFailedReason;
+    bool m_cameraFailedShown{false};
 
     sf::Texture m_cameraTexture;
     std::vector<std::uint8_t> m_cameraRgba;
@@ -135,7 +145,15 @@ private:
 
     // ---- POS (existing) ----
     ui::PinkTextBox m_posBarcode, m_posQty, m_posCustomer, m_posContact;
-    ui::PinkButton m_posAddBtn, m_posCamBtn;
+    ui::PinkButton m_posAddBtn, m_posCamBtn, m_posDescribeBtn;
+    int m_posScroll{0};
+    std::vector<std::string> m_posHistory;  // last 3 POS messages (D-26)
+    std::vector<bool> m_posHistoryOk;
+    std::string m_lastNotFoundCode;  // unknown code already reported (D-25)
+    std::string m_lastScanAddCode;   // per-code scan cooldown (D-25)
+    std::chrono::steady_clock::time_point m_lastScanAddTime{};
+    bool m_resumeArmed{false};       // resume confirm arm (D-23)
+    std::string m_resumeArmedFor;
     ui::PinkDropdown m_modeDrop, m_statusDrop, m_merchantDrop;
     int m_modeIdxCache{0};
     ui::PinkButton m_posBillBtn, m_posNewBtn, m_productsRefresh, m_billCloseBtn;
@@ -149,11 +167,23 @@ private:
     bool m_posMessageOk{true};
     CompletedBill m_lastBill;
     bool m_showBill{false};
+    int m_billScroll{0};
     bool m_fullscreen{false};
 
     // ---- Phase 3: role, POS extras, manager state ----
     UserRole m_role{UserRole::Cashier};
     float m_roleSlide{0.0f};  // role slider thumb: 0 = Cashier end, 1 = Manager end
+
+    // Manager PIN prompt (D-05): the role slider and the Order Edit
+    // approval both ask for the PIN; the digits never appear in code
+    // (pin_hash.h holds only the FNV-1a hash).
+    enum class PinPurpose { Role, Approve, View };
+    ui::PinkTextBox m_pinInput;
+    ui::PinkButton m_pinOkBtn, m_pinCancelBtn;
+    bool m_pinPromptActive{false};
+    PinPurpose m_pinPurpose{PinPurpose::Role};
+    View m_pinTargetView{View::PosOrder};
+    std::string m_pinMessage;
 
     // POS extras (special discount + amount received + hold + resume + print)
     ui::PinkTextBox m_posSpecialPct;   // 0..8 (clamped)
@@ -189,6 +219,9 @@ private:
         m_pePriceInput, m_peTaxInput, m_peDiscountInput, m_peQtyInput;
     ui::PinkDropdown m_peUnitDrop, m_peCategoryDrop;
     ui::PinkButton m_peSaveBtn, m_peBackBtn, m_peBarcodeBtn;
+    ui::PinkTextBox m_peSearchInput;
+    ui::PinkButton m_pePrevBtn, m_peNextBtn;
+    int m_peScroll{0};
     std::string m_peMessage;
     int m_peLoadedId{-1};  // product loaded in the edit form (its list row is highlighted)
     std::string m_peGeneratedBarcode;
@@ -216,8 +249,11 @@ private:
     bool m_oeManagerApproved{false};
     std::string m_oeLoadedId;  // the order actually loaded in Order Edit (Save acts on this, not the id box)
     std::vector<std::pair<Product, int>> m_oeLines;
+    int m_oeScroll{0};
 
     // Bill Print screen (or overlay)
+    ui::PinkTextBox m_printBillIdInput;
+    ui::PinkButton m_printLoadBtn;
     ui::PinkButton m_printPdfBtn, m_printCloseBtn;
     std::string m_printMessage;
 
@@ -254,6 +290,9 @@ private:
     void inventorySet();
     void productEditLoad();
     void productEditSave();
+    // Product Edit list: indices into m_productsCache matching the
+    // search box (D-29), in display order.
+    std::vector<std::size_t> peVisibleIndices() const;
     void productEditGenerateBarcode();
     void runReport();
     void drawReportTable(const sf::FloatRect& card);
@@ -296,7 +335,12 @@ private:
     void browseFile();
     void decodeFile();
     void runSelfTest();
-    void showToast(const std::string& message, bool success);
+    void setPosMessage(const std::string& message, bool ok);
+    void billPrintLoad();
+    void requestPin(PinPurpose purpose, View target = View::PosOrder);
+    void submitPin();
+    void drawPinOverlay();
+    static bool isManagerView(View v);
     sf::Text makeText(const std::string& value, unsigned int size, const sf::Vector2f& position,
         sf::Color color = ui::theme::Text) const;
     static std::string chooseFile();
@@ -347,6 +391,23 @@ private:
 
     bool anyTextFocused() const;
     void handleEvents();
+    void routeTextEntered(char32_t unicode);
+    void handleSidebarClick(const sf::Vector2f& pos);
+    void handleGeneratorClicks(const sf::Vector2f& pos);
+    void handleFileScannerClicks(const sf::Vector2f& pos);
+    void handleCameraScannerClicks(const sf::Vector2f& pos);
+    void handlePosOrderClicks(const sf::Vector2f& pos);
+    void handleProductsClicks(const sf::Vector2f& pos);
+    void handleSelfTestClicks(const sf::Vector2f& pos);
+    void handleCategoriesClicks(const sf::Vector2f& pos);
+    void handleSeasonsClicks(const sf::Vector2f& pos);
+    void handleInventoryClicks(const sf::Vector2f& pos);
+    void handleProductEditClicks(const sf::Vector2f& pos);
+    void handleReportsClicks(const sf::Vector2f& pos);
+    void handleHeldOrdersClicks(const sf::Vector2f& pos);
+    void handleOrderEditClicks(const sf::Vector2f& pos);
+    void handleBillPrintClicks(const sf::Vector2f& pos);
+    void handlePinOverlayClick(const sf::Vector2f& pos);
     void update(float deltaSeconds);
     void draw();
 };

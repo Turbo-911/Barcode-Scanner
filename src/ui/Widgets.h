@@ -104,20 +104,8 @@ private:
     int m_hovered;  // option index under the mouse, -1 = none
 };
 
-// Small rounded toast that appears bottom-right for a few seconds.
-class ToastNotification
-{
-public:
-    ToastNotification(sf::Font& font);
-    void show(const std::string& message, bool success);
-    void update(float deltaSeconds);
-    void draw(sf::RenderTarget& target, const sf::Vector2f& windowSize) const;
-    bool isVisible() const;
-
-private:
-    sf::Font& m_font;
-    std::string m_message;
-    bool m_success;
-    float m_remaining;
-};
 }
+
+// D-26: no toast/pop-up box exists any more (user forbids the green
+// toast box at bottom-right). Results are reported inside each
+// screen's own message area; the POS screen keeps a 3-message history.

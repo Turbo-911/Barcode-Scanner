@@ -49,10 +49,12 @@ public:
     // Manager: add a new product. The barcode must be empty in the call
     // and is generated from the product id + category id. Returns "" on
     // success, else:
-    //   "bad-category"  - category id is unknown
+    //   "bad-category"  - category id is unknown, "00", or cannot form a barcode
     //   "bad-id"        - id <= 0 or already used
     //   "bad-barcode"   - barcode already used
-    //   "bad-fields"    - name or acronym empty
+    //   "bad-fields"    - D-21 field rules: name/acronym (1-8 chars), unit
+    //                     count|weight, price > 0, tax >= 0, 0 <= discount
+    //                     <= price, quantity >= 0
     std::string addProduct(Product p);
 
     // Manager: replace a product (matched by id). Its category id must
@@ -61,6 +63,9 @@ public:
     std::string updateProduct(const Product& p);
 
 private:
+    // D-31: the ONE stock-adjust function (see product_services.cpp).
+    bool modifyStock(int productId, int delta, bool absolute);
+
     IProductRepository& m_repo;
     CategoryService& m_categories;
 };
