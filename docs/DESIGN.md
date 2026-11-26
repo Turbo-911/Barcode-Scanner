@@ -43,7 +43,7 @@ Group: **Chili Mili**
 | `src/services/bill_calculator` | Pure money maths: totals without tax, tax, discount, payable. No files, no GUI — unit-testable |
 | `src/services/product_service` | Product lookups (description feature), THE stock rule, stock decrease after a sale |
 | `src/services/order_service` (bill rows: `src/services/bill_service`) | Recording an order (cart) and checkout: writes Order + OrderDetails + Bill rows, updates stock |
-| `src/ui/*` | Presentation plus display formatting. The GUI calls the Phase 1 functions and the Phase 2/3 services and does not write data files itself (since v35, even held-order delete goes through `OrderService::archiveOrder`). It DOES own presentation-side rules the services do not: the merchant drop-down lists, the phone-number formatting rule, and rejecting a special discount outside 0–8% before checkout. Those are UI rules, not file-format or money logic — but "no logic in the UI" would be false |
+| `src/ui/*` | Presentation plus display formatting. The GUI calls the Phase 1 functions and the Phase 2/3 services and does not write data files itself (since v35, even held-order delete goes through `OrderService::archiveOrder`). It DOES own presentation-side rules the services do not: the phone-number formatting rule, and rejecting a special discount outside 0–8% before checkout. The merchant drop-down lists used to be such a rule; since v38 they live in `src/domain/payment_rules` (one home, used by all three call sites) and the GUI only displays them. Those are UI rules, not file-format or money logic — but "no logic in the UI" would be false |
 
 ## How OCP / AoC shows up
 
@@ -112,16 +112,22 @@ where each total sums `per-unit value x quantity` over the order.
    indistinguishable from missing. Acronym, unit, barcodeFile, status
    and payment mode are never encoded — a space in any of them shifts
    every later field and the line is dropped (and counted, v35).
-2. **Stock rule (D-15 — deliberate deviation from the spec):** "the
-   product shall be added if the required quantity is less than the
-   available quantity" is implemented as *must not exceed* the
-   available quantity (`quantity <= availableQuantity`), so
-   the last unit in stock can still be sold. Buying the last unit is
-   standard retail; the spec's strict `<` would leave one unit of
-   everything permanently unsellable. Code, test and this document
-   agree on `<=`. The check also applies to the combined quantity when the same product is added twice, and is
+2. **Stock rule (D-15 — deviation WITHDRAWN in v38, audit D-08):**
+   "the product shall be added if the required quantity is less than the
+   available quantity" is implemented exactly as written:
+   `ProductService::canSell` is `quantity > 0 && quantity <
+   availableQuantity` — buying the last unit is NOT allowed, so one
+   unit of everything stays permanently unsold. Up to v37 this
+   document (and the code) deliberately deviated to `<=` on the
+   grounds that buying the last unit is standard retail; that
+   deviation is withdrawn in v38 and code, tests and this document
+   now agree on strict `<`. The check also applies to the combined quantity when the same product is added twice, and is
    re-checked at checkout. Stock in `Data/product.txt` is decreased after a
-   bill is generated. Change `ProductService::canSell` to alter this.
+   bill is generated. The one exception is `saveEditedPaidOrder`,
+   which compares the new quantities against stock PLUS the
+   quantities the edit returns first — a different rule from
+   `canSell`, not a second copy of it. Change
+   `ProductService::canSell` to alter this.
 3. **Camera scanning in the POS:** a camera scan auto-adds one unit
    to the cart at once (supermarket-till behaviour, with a ~2 s
    per-code cooldown so holding a barcode up does not add it
@@ -165,12 +171,14 @@ where each total sums `per-unit value x quantity` over the order.
    so white-on-black barcodes decode; `test_inverted.bmp` is a
    genuinely inverted `test_normal.bmp` and decodes to 123456.
 8. **What `product.txt` quantity means (D-33):** the quantity column
-   is the REMAINING stock after all recorded sales. Opening stock is
-   not recorded anywhere, so a historical sale can never be
-   reconciled against it from the files alone — OIL sold 10 in one
-   order while the file lists 8 remaining, and the files cannot say
-   whether the sale or the stock figure is wrong, so neither was
-   rewritten. CHOCO at 0 is a sold-out product, and the code already
+   is the REMAINING stock after all recorded sales. (v37 D-33: the
+   opening CAN now be read off the Inventory screen — OIL sold 11
+   across two paid orders, 1 in `09263117` plus 10 in `13211318`,
+   while the file lists 8 remaining, so the implied opening is 19
+   and the sale was consistent all along; see "Implied opening
+   stock (D-33)" below. The earlier sentence saying a historical
+   sale could never be reconciled from the files alone is superseded
+   by that section.) CHOCO at 0 is a sold-out product, and the code already
    refuses to sell it (`canSell` requires quantity ≥ 1 within stock).
 9. **Product barcode images are tracked (D-35):** `barcodes/*.bmp`
    is deliberately NOT in `.gitignore`. Generated/product barcodes
@@ -206,7 +214,9 @@ is the current one.)
   (normal/rotated/inverted/blurry/noisy/small/large), and a
   decode-back check of all 31 BMPs in `barcodes/`. (It was 6/6 before
   v35, when no file was ever decoded by any self-test.)
-- `tests/pos_selftest.cpp` — 127 headless checks of the Phase 2/3 modules:
+- `tests/pos_selftest.cpp` — 234 headless checks of the Phase 2/3 modules
+  (127 baseline, +36 journal and +7 stock-audit in v37, +43 Batch A
+  and +21 Batch B in v38):
   Data/product.txt parsing, the stock rule, merged-quantity rejection, totals
   (480 + 25 - 10 = 495 before seasonal discount; the same basket is
   445.50 inside the active 10% season — seasonal 49.50 — see the v32
@@ -1109,3 +1119,551 @@ application code is untouched.
   object rules. Verified on Linux with `make -n`: the old file prints
   only "'build_obj' is up to date", the fixed file prints all 37
   compile commands plus the link step.
+## v37 — write-ahead journal: checkout is crash-safe (D-02)
+
+The v35 residual: a crash between the bill write and the stock moves
+left a bill with unmoved stock, and a crash anywhere in checkout left
+orphans that were only *reported* (dataHealth), never repaired. v37
+closes that window with a write-ahead journal. The Order.txt /
+Bill.txt / BillDetail.txt formats are unchanged; the journal is a new
+additive file only.
+
+### The journal file — Data/journal.txt
+
+One line per checkout/edit attempt, space-separated, ending `#` like
+every other data file. The entry id reuses the Order Id:
+
+    orderId kind billId customerName customerContact date time
+    paymentMode paymentMerchant seasonalAmount specialAmount
+    amountReceived lines oldLines status #
+
+- `kind`: `checkout` | `edit`.
+- `seasonalAmount` / `specialAmount` / `amountReceived` are RUPEE
+  amounts (2 decimals), not percentages, so recovery rebuilds the
+  exact bill even if the season changes between the crash and the
+  restart. `date` / `time` are the BILL date/time: for a checkout
+  today/now, for an edit the ORIGINAL bill's date/time (so the
+  seasonal discount is for the right day).
+- `lines`: `productId:qty:stockBefore`, comma-separated, no spaces
+  (e.g. `1001:2:40,1002:1:25`). `stockBefore` is the product's stock
+  at the moment the entry was written. `oldLines` is the same encoding
+  for the lines an edit replaces, or `-` for a checkout.
+- `status`: `pending` | `done` | `aborted` (see below).
+- Example:
+  `22070325 checkout 122070325 Test_Customer - 2026-11-25 22:07:03
+  cash - 49.50 0.00 600.00 1001:2:40,1002:1:25 - done #`
+- The file is created on the first checkout; a fresh install has no
+  journal until then. It is written through `RecordFile::appendLine`
+  (the same append path as the other files) by
+  `JournalFileRepository` (`src/persistence/journal_repo.h/.cpp`),
+  formatted by `JournalSerialiser`
+  (`src/persistence/journal_serialiser.h/.cpp`).
+
+### When the journal is written
+
+`OrderService::checkout()` and `saveEditedPaidOrder()` append the
+`pending` entry FIRST — after every validation (stock, payment,
+underpayment, id uniqueness, bill build) has passed, but BEFORE any
+data file is touched and before any stock moves. If the journal append
+itself fails the attempt returns `"journal-failed"` and nothing was
+written, so the cashier can retry. On success the entry is marked
+`done` (a whole-file atomic rewrite, same tmp+rename as the other
+files). Marking is best-effort: a failed mark leaves a `pending`
+entry that the next recovery re-checks and marks done — a no-op.
+
+For the edit, the bill build and the stock check moved BEFORE the
+first stock move, so a failure there now leaves stock and files
+untouched (the old code had already returned the old quantities and
+had to roll them back). The stock check is non-mutating: the new
+lines must fit in the stock PLUS the old quantities the edit returns.
+Same result as the old increase-then-check.
+
+Failure after the journal write:
+
+- Checkout `write-failed`: the attempt's partial rows are rolled back
+  (`rollbackCheckoutWrites` — a fresh attempt's rows are removed; a
+  resumed completion's on-hold row and old detail rows are restored)
+  and the entry is marked `aborted`, so a retry (which generates NEW
+  ids) cannot be completed twice by a later recovery.
+- Checkout / edit `stock-failed`: the entry stays `pending` on
+  purpose — the order and bill ARE written and only the stock is
+  short, so recovery completes exactly the missing stock moves.
+- Edit `write-failed` / `stock-failed`: the entry stays `pending` —
+  the edit was validated and manager-approved, and re-applying it is
+  deterministic, so recovery rolls it forward to its target state.
+
+### Startup recovery — OrderService::recoverJournal()
+
+Runs once at startup, before the GUI opens (end of the
+`BarcodeStudioGui` constructor; the `--console` path runs the same
+recovery at the start of `App::run()`). `--selftest` does not run it:
+it is a read-only check. For each `pending` entry, in journal order:
+
+1. Rebuild the cart lines from the journal. Every touched product
+   must still exist and no expected stock may go negative — both are
+   checked BEFORE any file is written, so an entry that cannot be
+   completed stays `pending` (counted as `skipped`) and leaves the
+   data exactly as it was.
+2. Rebuild the TARGET bill from the journal (same lines, same rupee
+   amounts). An existing bill row is kept only when it already equals
+   the target — that distinguishes a checkout whose bill was already
+   written (keep it) from an edit whose bill still holds the OLD
+   totals (rewrite it). A bill id belonging to a different order is
+   never touched.
+3. Create the order row, or bring the existing row (an on-hold row
+   being completed, or a half-written paid row) to the journal's
+   values; `paymentAmount` always follows the bill.
+4. Replace this order's detail rows when they differ from the
+   journal's lines (a crash between the detail appends leaves a
+   partial set). Same for the bill's BillDetail rows.
+5. Stock, last: set each touched product to its expected final stock
+   (`stockBefore + oldQty - newQty`; `oldQty` is 0 for a checkout).
+   ABSOLUTE, not "decrease by qty" — so a crash halfway through the
+   original decreases (some lines moved, some not) still lands on the
+   same numbers, and a second recovery run is a no-op.
+6. Mark the entry `done`.
+
+Idempotency is by construction: every step first checks the current
+records/stock, so running recovery twice changes nothing the second
+time (verified by `pos_selftest`: bill count, stock and totals are
+identical after the second run).
+
+A malformed/partial journal line is a crash DURING the journal write
+itself: the checkout never started, so there is nothing to recover.
+`JournalSerialiser::parse` is strict (wrong kind/status, a bad
+number, a bad `productId:qty:stockBefore` triple, a missing `#`, or
+ANY token after `#` is malformed) and recovery ignores such lines and
+counts them as dropped lines — the same D-03 counting as the other
+files, with a `.bak` written before any save that would drop them.
+
+Assumptions the design leans on (single-user desktop POS): recovery
+runs at startup before any new sale, so no other stock move can land
+between the crash and the recovery, and the catalogue cannot change
+while the app is down (so rebuilt BillDetail prices match the
+originals). A `pending` entry whose product was deleted stays pending
+forever and is reported as skipped on every startup — that is
+deliberate: silently dropping a sale is worse than reporting it.
+
+### Where the result is shown
+
+`RecoveryReport` (`recovered`, `droppedLines`, `skipped`,
+`recoveredOrderIds`) is kept by `OrderService::lastRecovery()` and
+shown on the Self-Test screen's data-health area, next to the orphan
+and dropped-line counts, whether or not Run Self-Test was pressed
+(recovery already ran at startup):
+
+- `Recovery: OK - no interrupted checkout found at startup.`
+- `Recovered 1 interrupted checkout(s): 22070825 completed.`
+  (up to 3 order ids listed, then "and N more"; dropped lines and
+  still-pending entries are appended to the same line.)
+
+New checkout/edit error code the GUI must surface: `"journal-failed"`
+(the journal append failed; nothing was written, retry is safe).
+
+### Implied opening stock (D-33, Batch B)
+
+`product.txt` quantity is the REMAINING stock after all recorded
+sales (see "What `product.txt` quantity means" above). The Inventory
+screen now shows that reconciliation instead of leaving it unstated:
+a new **"Opening (implied)"** column, opening = remaining stock +
+total sold, where total sold is summed from `orderDetail.txt` by
+product id. No data file changes; the column is computed on load
+(`refreshInventory()` reloads the sold totals with the catalogue, so
+Set Stock and any sale keep it in step). One shared computation
+(`src/services/stock_audit.h`: `soldByProduct` /
+`impliedOpening` / `findViolations`) feeds the column, the Self-Test
+data-health flag and `pos_selftest`, so the three can never disagree.
+
+- **OIL, the D-33 example:** remaining 8, total sold **11** — 1 in
+  paid order `09263117` plus 10 in paid order `13211318` — so the
+  implied opening is **19**, and the sale is consistent: the stock
+  figure was never wrong, it was the remaining stock all along.
+  (The audit report's shorthand "sold 10" counts only the single
+  order `13211318`; the cumulative figure is 11. Both OIL orders are
+  paid, so paid-only and all-rows totals agree here.)
+- **Assumptions the column leans on:** the implied opening assumes
+  no unlogged restock, and it counts EVERY `orderDetail.txt` row as
+  a sale — including on-hold / in-progress orders, whose stock never
+  moved. For products with held orders the column is therefore an
+  upper bound on the true opening: SUGAR 52 (42 paid-only), TEA 21
+  (20), BISC 64 (60), PASTA 48 (43), SALT 81 (80). MILK (43), OIL
+  (19) and every product with no held rows are exact under either
+  reading. This is stated here rather than silently filtered,
+  because the task's definition is "summed from orderDetail.txt".
+- **CHOCO at 0** is a sold-out product: sold 0, opening 0, and the
+  code already refuses to sell it (`canSell` requires quantity ≥ 1
+  within stock).
+- **Data-health flag:** the Self-Test screen's data-health area now
+  also reports stock consistency. A product flags exactly when
+  total sold > implied opening — which is the same as its remaining
+  stock being negative, impossible under the files' own semantics,
+  so a flag WOULD be a real inconsistency. The shipped data flags
+  nothing. The flag is shown next to the orphan counts and the
+  journal-recovery line, and it is computed in `runSelfTest()` from
+  the same vectors the column uses.
+- This supersedes the "cannot be reconciled from the files alone"
+  sentence in the `product.txt` quantity note above, for every
+  product whose sales are all in `orderDetail.txt`: the opening can
+  now be read off the Inventory screen.
+
+### Verification (v37)
+
+- Full build (`g++ -std=c++17 -O1 -Wall -Wextra`, all `src/**/*.cpp`):
+  zero warnings.
+- `--selftest`: 44/44. Console self-test (`--console`, option 4):
+  13/13.
+- `pos_selftest` (fresh empty folder, never the repo root): 170/170
+  (127 baseline + 36 new journal checks: 5-entry/no-pending
+  snapshot check; a hand-written crash — order written, bill
+  missing, stock unmoved — recovered to a 207.00 bill with stock
+  25 -> 23, and a no-op second run; the same order's edit crashed
+  pre-rewrite, recovered to a 171.00 bill with stock milk 36 -> 35
+  and bread 23 -> 25, and a no-op second run; a malformed line
+  ignored and counted; strict-parser checks; + 7 Batch B stock-audit
+  checks: helper sold totals match an independent sum, milk opening
+  41 = remaining 35 + sold 6, no violations in the test data, OIL
+  8 + 10 = 18 for one order and 8 + 11 = 19 for both shipped OIL
+  orders, a synthetic sold 5 > opening 3 (remaining -2) flags, and
+  sold 5 = opening 5 at remaining 0 does not flag).
+- Inventory screenshot (view 8): the "Opening (implied)" column
+  renders with Stock; OIL shows Stock 8, Opening 19. Self-Test
+  screenshot: the data-health area shows "Stock: OK" with no
+  violations on the shipped data.
+
+## v38 — second audit pass (audit deficits D-01 to D-32, audited at v31)
+
+v38 finishes the deficits from the "ISE Audit & Viva Pack" that were
+still live in v37. Nothing in `Data/` changed (byte-identical to
+v37); the shipped data still holds 24 products, 12 orders, 20 order
+details, 7 bills and 13 bill details. Work was done in three batches
+on the one tree: A (services/data), B (GUI), C (decoder/camera/build/
+docs). `--selftest` stays 44/44; `pos_selftest` grows 170 -> 234.
+
+### Batch A — services + data layer
+
+- **D-06 acronym spaces:** product and category acronyms must match
+  `[A-Z0-9]{1,8}` — spaces, lowercase and punctuation are refused
+  (`"bad-fields"` for products, `"bad-acronym"` for categories).
+  The check lives in `validateProductFields()` (so add and update
+  share it) and in `addCategory`/`updateCategory`. All shipped
+  acronyms already satisfy the rule.
+- **D-23 re-hold duplicates:** holding an order that was resumed
+  from Held updates that order's row IN PLACE (same id, re-stamped
+  date/time, new customer/lines/payment) and replaces its
+  `OrderDetail` rows; no stock moves on any hold path. If the resumed
+  order no longer exists, the hold falls through to a fresh hold.
+  `m_resumedOrderId` is KEPT after the in-place re-hold, so a later
+  checkout still supersedes the same order — but the GUI's
+  `posNewOrder()` clears the id on every new-order reset (see Batch B
+  below), so at GUI level a fresh checkout after a re-hold creates a
+  NEW order and the re-held row stays on-hold. The KEEP is harmless
+  and correct at service level; it is not observable through the
+  GUI flow.
+- **D-26a anonymous hold:** `holdOrder()` no longer returns
+  `"no-customer"`; an empty customer name is stored as `"Walk-in"`.
+  Checkout is untouched — it still refuses an empty name, because a
+  bill needs a name.
+- **D-08 stock rule:** `ProductService::canSell` is now strict `<`
+  (`quantity > 0 && quantity < availableQuantity`); buying the last
+  unit is not allowed. Decision 2 above is withdrawn accordingly.
+  The one direct stock comparison that is NOT `canSell` —
+  `saveEditedPaidOrder()` (`new qty > available + oldQty`) — was
+  deliberately left alone: an edit gives the old quantities back
+  first, so "fits in stock + returned stock" is a different rule.
+- **D-10/D-22 combined discount cap (50%):** the COMBINED seasonal
+  + special discount is capped at 50% of the pre-discount payable.
+  The cap trims the special discount first, then the seasonal, so
+  the two effective amounts always sum to the discount actually
+  taken. `BillCalculator::cappedDiscounts()` computes the effective
+  amounts; `payableAfterDiscounts()` routes through it, and
+  `BillService::buildBill()` stores the EFFECTIVE amounts — storing
+  the raw ones would have made the D-32 sum check refuse every
+  capped bill with `"bill-error"`. Recovery rebuilds bills through
+  the same `buildBill()`, so it caps identically. No shipped bill
+  hits the cap (the largest combined discount on shipped data is
+  70.80 against a 354.00 cap).
+- **D-02a approval log:** `src/persistence/audit_log.h/.cpp` —
+  `audit_log::logManagerApproval(orderId[, date, time])` appends one
+  line `<orderId> <date> <time> #` to `Data/audit.txt`, created on
+  first approval (it is NOT shipped). Called once per approval, at
+  approval time, from the GUI's PIN-accepted Approve branch — never
+  from `editPaidOrder()`/`saveEditedPaidOrder()`, which would
+  double-log.
+- **D-20 top-10 tiebreak (verified, no change):** `topTenSoldItems()`
+  really does sort by quantity descending, then acronym ascending,
+  over a deterministic `std::map` input order. Two product ids
+  sharing one acronym would still tie after the acronym step; no
+  shipped data does that.
+- **D-30 spec-named files (verified, no renames):** a probe with
+  ONLY spec-cased copies (`Product.txt`, `Order.txt`,
+  `OrderDetail.txt`, `Bill.txt`, `BillDetail.txt`, `PCategory.txt`,
+  `Seasons.txt`) loaded every file through `RecordFile::locate()`'s
+  case-insensitive fallback (24/12/20/7/13/8/2 rows; White Sugar
+  resolves). The lowercase filenames stay the project's decision
+  (decision 4 above).
+- **Camera device API (additive, review-checked, NOT run):**
+  `Camera::initialize(int deviceIndex)` and
+  `Camera::enumerateDeviceNames()` (`src/camera/camera.h/.cpp`). A
+  bad index fails instead of silently opening device 0; a busy
+  requested device falls back to the next enumerated device once
+  (D-12); an already-initialised camera's `initialize()` returns
+  true WITHOUT switching devices — call `cleanup()` first. The
+  Media Foundation branch cannot compile or run on this Linux VM
+  (no MF backend here); it was static-reviewed line by line
+  (activator array freed on the out-of-range path, `MFStartup` /
+  `MFShutdown` pairing, `CoTaskMemFree` on every friendly-name
+  path) and the Linux stub branch compiled with zero warnings.
+  Real-device enumeration/selection needs a Windows run.
+- **Build lists (pre-existing v37 defect, fixed):**
+  `Makefile.gui`, `CMakeLists.txt` AND `run_gui.bat`'s fallback
+  g++ list all omitted `src/persistence/journal_repo.cpp` and
+  `src/persistence/journal_serialiser.cpp` — building with exactly
+  the old `Makefile.gui` source list failed to link (undefined
+  `JournalFileRepository` references); only a `src/**/*.cpp` glob
+  build worked. Batch A fixed the two lists it could touch;
+  Batch C fixed `run_gui.bat` (see below).
+
+### Batch B — GUI
+
+- **D-26b camera keeps running between orders:** `posNewOrder()` no
+  longer stops and restarts the camera; `resetScanState()` bumps the
+  scan generation so the worker drops half-built scan state.
+- **D-18 Order Edit add product:** the Order Lines card gains an
+  "Add barcode:" box (6 digits) plus an Add button
+  (`orderEditAddLine()`). A known product is bumped in quantity if
+  already a line, otherwise appended at qty 1; the stock gate is
+  `canSell` (strict `<`) on the NEW total quantity, and the line
+  only joins `m_oeLines` — it reaches the files through the existing
+  save path, so stock reconciliation and bill re-issue are unchanged.
+  (The GUI gate checks the new total against catalogue stock WITHOUT
+  adding back the qty the edit will return, so an add that exactly
+  consumes stock + returned stock is refused in the GUI even though
+  the service would accept it — the strict rule applied
+  conservatively.)
+- **D-21 silent overwrite refused:** saving a product whose id
+  already exists with nothing loaded is refused with `"Product id
+  already exists - load it to edit."` before any service call. The
+  legitimate edit path (load, then save) is untouched.
+- **D-16 camera device choice:** a "Camera device" dropdown on the
+  Camera screen (`refreshCameraDevices()` /
+  `selectCameraDevice(int)`), filled from
+  `Camera::enumerateDeviceNames()`; the worker opens
+  `initialize(m_cameraDeviceIndex)`. Selecting another device stops
+  the camera first (an initialised camera does not switch), records
+  the index, and restarts only if it was running. On this Linux VM
+  the dropdown shows the fallback `{"Camera 0"}`.
+- **D-24 partial — merchant rule moved to domain/:** the merchant
+  lists now live in one place, `src/domain/payment_rules.h/.cpp`
+  (`merchantOptionsFor(mode)`; rule unchanged: card -> ABL/MCB/
+  Meezan, wallet -> JazzCash/EasyPaisa/Raast, else `{"-"}`). The
+  GUI's anonymous-namespace copy is deleted; all three call sites
+  use the domain function. The payable formula still exists in
+  exactly one place (`BillCalculator`).
+- **D-25 partial — existing interfaces where they fit:** the camera
+  worker loop now feeds frames to `ScanService` (confirmation is its
+  3-of-last-5 rule; the old 3-consecutive counting is gone — one
+  semantic change: a frame that decodes to nothing no longer clears
+  the window, it simply is not a successful decode), and
+  `decodeFile()` / `runSelfTest()` decode through
+  `ItfBarcodeDecoder` instead of the `decodeBarcode` free function
+  (same implementation underneath). No interface was found unusable
+  and none was forced.
+- **D-02b role falls back to Cashier after a successful Order Edit
+  save** (success path only, after the approval is spent — NOT after
+  Approve, which would block saving, since the save re-checks the
+  Manager role; failed saves leave the role untouched).
+- **D-02a approval log wired in:** exactly
+  `audit_log::logManagerApproval(m_oeLoadedId)` in `submitPin()`'s
+  `PinPurpose::Approve` branch.
+- **D-14 description card fields:** the Product Description card
+  (128px, was 116px) gains a fifth line,
+  `Category <id> <name> - <barcodeFile>`, e.g.
+  `Category 11 Dairy - barcodes/barcode_111001.bmp`. The per-unit
+  discount was already on the tax line, so it is not repeated. The
+  camera card's inline summary was NOT extended (no room at 156px).
+- **D-11 payable difference:** on a successful Order Edit save the
+  message reads `Order <id> updated. Bill <billId> re-issued.
+  Payable PKR <old> -> PKR <new> (extra charge PKR <diff> /
+  refund PKR <diff> / no change)` (ASCII `->`, 0.005 tolerance; the
+  old payable is read from the stored bill row before saving).
+- **D-23 GUI flow (verified, no fix needed):** `posHold()` calls
+  `holdOrder()` FIRST and then `posNewOrder()`; the in-place re-hold
+  appends no row, and the following `clear()` discards the kept
+  resumed id — so a fresh checkout after a re-hold creates a NEW
+  order and the re-held row stays on-hold. Verified at service level
+  by simulating the exact GUI sequence in `pos_selftest`.
+- **Known cosmetic edge (Batch B, fixed in Batch C):** with BOTH a
+  seasonal discount and a typed special discount AND a product
+  described, the totals card's bottom border ran ~9px past the
+  680px window edge (the payable figure itself stayed visible).
+  Batch C fixed it with a geometry-only nudge; see Batch C below.
+
+### Batch C — decoder / camera / build / docs
+
+- **D-19 decoder quiet zone:** `Decoder.cpp:tryDecode37Runs`
+  now requires a quiet zone of >= 10 narrow widths of white on BOTH
+  sides of the 37-run window, using the same narrow estimate the
+  decoder already computes from the four start-pattern runs. The
+  rule is measured as a white-margin SPAN, not just the immediately
+  adjacent run: the walk steps over isolated black runs shorter
+  than 0.45 narrow widths (which cannot be barcode elements — the
+  decoder already rejects such ratios) up to the first run that
+  could be a real bar. The strict adjacent-run reading was tried
+  first and broke the shipped `tests/test_noisy.bmp`: its only
+  decoding scanline has trailing runs white 3, black 1 (speck),
+  white 26 — a 30px margin split by one 1px speck, which the strict
+  reading saw as 3px (1.0 narrow widths). With the span walk the
+  margin measures 30px (10.0 narrow widths) and the file decodes.
+  An interior slice of a longer ITF code still fails, because its
+  flanking runs are real bars/spaces of >= 1 narrow width, which end
+  the walk at once. Probe (project's own `itf_patterns.h`, module
+  3): OLD decoder — ITF-14 `30784853194130` -> `194130` (the bug, as
+  specified); NEW decoder — ITF-14 -> no code, ITF-14 module 2 -> no
+  code, ITF-8 `12345678` -> no code, own 6-digit `123456` -> `123456`.
+  Encoder margins measured first: every `barcodes/*.bmp` has exactly
+  10.00 narrow widths of white on each side (30px at module 3);
+  `test_small`/`test_large` likewise 10.00 at their own modules.
+  The README already claimed "at least 10 narrow widths on each
+  side" — the code now enforces what the README said.
+- **D-31 PNG/JPG:** `src/common/stb_image.h` is the genuine
+  upstream header (nothings/stb, v2.34, 278,442 bytes, fetched from
+  `raw.githubusercontent.com/nothings/stb/master/stb_image.h`) —
+  no hand-written PNG/JPG decoder. `imageio::loadImage` now
+  dispatches on extension (case-insensitive): `.png`/`.jpg`/`.jpeg`
+  decode through stb to 8-bit greyscale for the decoder; anything
+  else still goes through the project BMP codec. The implementation
+  macro lives in `image_io.cpp` only. The File Scanner uses the
+  shared loader (`decodeFile()`), the Browse dialog filter offers
+  image files / BMP / PNG / JPEG, and the console file-scan path
+  (`App::readFromFile`, which already used `loadImage`) gains
+  PNG/JPG with no code change. Verified with real files rendered
+  from shipped product BMPs through the project's own loader +
+  decoder: PNG -> `145555`, JPG (q95) -> `145555`, JPEG (q90) ->
+  `145555`, JPG (q85) -> `111001`, uppercase `.PNG` -> `111001`,
+  BMP regression -> `145555`. stb compiles with zero warnings under
+  the project's `-Wall -Wextra`.
+- **D-29a `.vscode/launch.json`:** the third configuration's
+  `d:/S05/ISE/BARCODE/Barcode-Scanner` paths are now
+  `${workspaceFolder}` and `${workspaceFolder}/build/Debug/outDebug`;
+  the file parses as valid JSON afterwards. No `d:/S05` path remains
+  in `.vscode/`, `src/`, `docs/` or the README.
+- **D-29b `using namespace std;`:** removed from
+  `src/common/common.h` (replaced by a comment stating the header
+  never pollutes the global namespace) and every use it was covering
+  qualified: `common.h` itself, `src/barcode/decoder.h`,
+  `src/barcode/encoder.h`, `src/common/BMP.h`, and the definitions in
+  `src/barcode/encoder.cpp` and `src/barcode/Decoder.cpp`. No other
+  header had the pattern (checked: only `common.h`); `BMP.cpp` and
+  `main.cpp` keep their own `.cpp`-local using-directives, which do
+  not leak into headers. Full build zero warnings on the first
+  compile after the change — nothing else in the tree relied on it.
+- **D-29c `run_gui.bat`:** (a) after a successful build the bat now
+  copies the six MinGW/SFML DLLs (`libstdc++-6.dll`,
+  `libgcc_s_seh-1.dll`, `libwinpthread-1.dll`, `sfml-graphics-3.dll`,
+  `sfml-window-3.dll`, `sfml-system-3.dll`) from the detected MSYS2
+  bin folder next to the exe, so double-clicking the exe works
+  outside the bat; a missing DLL only warns (`[WARN] ... was not
+  found next to g++`), it NEVER fails the build. (b) The fallback
+  g++ list gains `journal_serialiser.cpp`, `journal_repo.cpp`,
+  `audit_log.cpp` and `payment_rules.cpp`. (c) The whole bat was
+  static-reviewed line by line against the known traps: every
+  comment starts with `rem`; the only `( ... )` in echo/rem text
+  sits in top-level `rem` lines, never inside a `( )` block; every
+  error check uses the `if errorlevel` form (no `%ERRORLEVEL%`);
+  every for-loop variable is `%%VAR`; variables read inside a block
+  (`%PATH%`, `%MSYSBIN%`, `%NUMBER_OF_PROCESSORS%`) are all set
+  BEFORE that block, never inside it. The bat was NOT run — there is
+  no Windows on this VM — so this is review-checked, not run-checked.
+- **Build lists:** all four files added after Batch A/B are now in
+  all three explicit lists (`Makefile.gui`, `CMakeLists.txt`,
+  `run_gui.bat` fallback): `payment_rules.cpp` 1/1/1,
+  `audit_log.cpp` 1/1/1, `journal_repo.cpp` 1/1/1,
+  `journal_serialiser.cpp` 1/1/1. `make -f Makefile.gui` still
+  cannot work on this Linux VM (pre-existing: it passes `-D_WIN32`,
+  so `common.h` includes `windows.h`, which does not exist here);
+  the explicit g++ build is the Linux verification path, as for
+  v35/v37.
+- **D-32 `captureImage` deleted:** `Camera::captureImage()` (raw
+  owning `Image*`, never used) is removed — BOTH definitions
+  (Media Foundation and VFW) AND the `camera.h` declaration. Grep
+  over `src/` finds no remaining mention and no caller; the build
+  still passes.
+- **D-32 README decoder description:** corrected to the real rule —
+  the five widths of a digit are sorted, the threshold is the
+  midpoint between the 3rd and 4th smallest, widths above it are
+  wide, and exactly two wides are required (the old text said "wide
+  if >= 2x narrow", which is not what `classifyDigit` does). The
+  rest of the paragraph was corrected while there: four thresholds
+  per scanline plus the inverted-polarity fallback, horizontal /
+  vertical / diagonal scanlines (~16 degrees), the 37-run window
+  (4 start + 30 digit + 3 stop), and the quiet-zone rule above.
+- **Totals-card clip (Batch B cosmetic edge), FIXED:** geometry
+  only, no widget moved — totals gap 12->8px roomy (10->7px
+  compact), totals top pad 10->7px, customer-card bottom pad 8->4px
+  roomy. Bottom border now at 678px roomy / 677px compact with both
+  discounts (was 689px), verified with before/after screenshots of
+  the same state (milk x2 + bread x1, seasonal 10% 49.50, special
+  1.5% 7.43, PAYABLE 438.07): before, the border and the lower half
+  of the PAYABLE line ran off the 680px edge; after, the whole card
+  including its bottom border is in frame.
+- **D-28/G10 rounding spot-check (audit claim: a BREAD bill stored
+  payable 101.78 while its fields sum to 101.77):** verified
+  through the real `BillCalculator`/`BillService` path (BREAD 1x120,
+  tax 5, discount 10, 10% season, 1.5% special) — totals payable
+  115.00, seasonal 11.50, special 1.73, stored payable **101.77**,
+  field sum **101.77**, match. No fix was needed: v37's
+  round2-at-each-step plus the D-32 sum check in `buildBill()`
+  (which refuses a bill whose fields do not sum to its payable)
+  already resolve it.
+- **Docs:** this section; the Decisions section withdraws the `<=`
+  stock-rule deviation (decision 2) and corrects the stale OIL
+  figure (decision 8); the README is updated wherever behaviour
+  changed (PNG/JPG, camera device choice, Order Edit Add, Walk-in
+  hold, 50% cap, audit log, strict-`<` stock rule).
+
+### What is still not split (structural, honestly)
+
+- `BarcodeStudioGui` is still one big class (~4,462-line `.cpp`,
+  all 14 screens, the camera worker thread, the `screenshot()` QA
+  hook). What Batch B DID do: the merchant rule moved to
+  `src/domain/payment_rules` (the GUI only displays the lists now);
+  the camera worker feeds `ScanService` instead of counting
+  consecutive frames itself; file/self-test decoding goes through
+  the `IBarcodeDecoder` interface. What it did NOT do: split the
+  class per screen, introduce `I*Service` interfaces (the GUI still
+  holds concrete services), or move the QA hook out of the
+  production class. The full split remains the known structural item.
+- `OrderService` still owns the cart, checkout, hold/resume,
+  paid-order edit + 7-day gate, and stock reconciliation (see the
+  v35 "SRP, honestly" section — unchanged by v38).
+- The implied-opening column still sums ALL `orderDetail.txt` rows,
+  including on-hold orders whose stock never moved (SUGAR 52 vs 42
+  paid-only). Paid-only is the more correct definition and a
+  one-line change; it is still a pending decision, not a silent
+  filter.
+- The camera Media Foundation branch and the `run_gui.bat` are
+  review-checked, not run — both need a Windows run to confirm
+  (device enumeration/selection on real hardware; the bat's DLL
+  copy and fallback build).
+- The decoder's rotation limit (~16 degrees, decision 7) is
+  unchanged, and there is still no blur/noise filter beyond the
+  per-scanline thresholds.
+
+### Verification (v38, all three batches)
+
+- Full build (`g++ -std=c++17 -O1 -Wall -Wextra`, all `src/**/*.cpp`):
+  zero warnings, exit 0.
+- `--selftest`: 44/44 (unchanged: the quiet-zone rule keeps every
+  shipped barcode and stress file decoding, and still rejects
+  ITF-14/ITF-8 probes).
+- `pos_selftest` (fresh empty folder, never the repo root): 234/234
+  (170 + 43 Batch A + 21 Batch B, 0 failures).
+- Data integrity recheck (Python, on the shipped `Data/`): 24
+  products, 12 orders, 20 orderDetails, 7 bills, 13 billDetails;
+  every bill's maths recomputes; all `Data/*.txt` end with a newline.
+- Screenshots (content-checked, `~/workspace/your_files/`):
+  POS, Generator, Order Edit (Add controls), Reports dropdown,
+  Inventory, Bill Print, Self-Test, Camera (device dropdown), plus
+  the totals-card before/after pair.
+- Packaged zip extracted to a fresh folder and rebuilt + `--selftest`
+  there (see the batch C report for the result).

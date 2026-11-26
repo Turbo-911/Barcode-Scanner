@@ -14,7 +14,7 @@ namespace {
 } // namespace
 
 // Exactly 6 digits, and the first digit must not be 0 (project requirement).
-bool isValidCode(const string& digits) {
+bool isValidCode(const std::string& digits) {
     if (digits.size() != 6) return false;
     for (char c : digits)
         if (c < '0' || c > '9') return false;
@@ -23,8 +23,8 @@ bool isValidCode(const string& digits) {
 
 // Returns 37 widths: start(4) + 3 pairs(10 each) + stop(3).
 // Elements alternate bar, space, bar, space... starting with a bar.
-vector<int> encodeToWidths(const string& digits) {
-    vector<int> widths;
+std::vector<int> encodeToWidths(const std::string& digits) {
+    std::vector<int> widths;
     if (!isValidCode(digits)) return widths;
     widths.reserve(37);
 
@@ -48,9 +48,9 @@ vector<int> encodeToWidths(const string& digits) {
     return widths;
 }
 
-Image renderBarcode(const string& digits, int module, int height) {
+Image renderBarcode(const std::string& digits, int module, int height) {
     Image img;  // empty image means failure (App checks for this).
-    vector<int> widths = encodeToWidths(digits);
+    std::vector<int> widths = encodeToWidths(digits);
     if (widths.empty() || module <= 0 || height <= 0) return img;
 
     int totalModules = 2 * kQuietZoneModules;

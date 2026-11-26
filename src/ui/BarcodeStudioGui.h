@@ -7,6 +7,11 @@
 #include "domain/order.h"
 #include "domain/bill.h"
 #include "domain/enums.h"
+#include "domain/payment_rules.h"
+#include "barcode/decoder.h"
+#include "camera/camera.h"
+#include "services/scan_service.h"
+#include "persistence/audit_log.h"
 #include "persistence/i_product_repo.h"
 #include "persistence/i_order_repo.h"
 #include "persistence/i_bill_repo.h"
@@ -15,12 +20,14 @@
 #include "persistence/i_seasons_repo.h"
 #include "services/product_service.h"
 #include "services/order_service.h"
+#include "services/stock_audit.h"
 #include "services/category_service.h"
 #include "services/seasons_service.h"
 #include "services/report_service.h"
 #include "common/pin_hash.h"
 
 #include <chrono>
+#include <map>
 #include <optional>
 
 #include <SFML/Graphics.hpp>
@@ -82,6 +89,11 @@ private:
     ui::PinkButton m_scanNextBtn;
     ui::PinkButton m_camAddBtn;
     ui::PinkButton m_fileAddBtn;
+    // D-16 (v38): the capture-device picker. Its options are the
+    // enumerated device names (Camera::enumerateDeviceNames()); entry
+    // [i] is device i, so the selection IS the device index.
+    ui::PinkDropdown m_camDeviceDrop;
+    int m_cameraDeviceIndex{0};  // device the worker opens on (re)start
 
     // Self-test widgets
     ui::PinkButton m_runTest;
@@ -90,6 +102,13 @@ private:
     int m_testPassed;
     DataHealth m_health;  // D-02/D-03: orphan counts + per-file dropped lines
     bool m_healthReady{false};
+    // v37 (D-33): products whose total sold exceeds their implied
+    // opening (remaining + sold) - impossible under the files' own
+    // semantics, so a non-empty list is a real inconsistency. Shown
+    // in the Self-Test data-health area; empty on the shipped data.
+    std::vector<stock_audit::StockViolation> m_stockViolations;
+    RecoveryReport m_recovery;  // v37 (D-02): what startup journal recovery did
+    bool m_recoveryDone{false};
     int m_droppedProduct{0}, m_droppedOrder{0}, m_droppedOrderDetail{0};
     int m_droppedBill{0}, m_droppedBillDetail{0}, m_droppedCategory{0}, m_droppedSeasons{0};
 
@@ -122,6 +141,14 @@ private:
     sf::Texture m_cameraTexture;
     std::vector<std::uint8_t> m_cameraRgba;
     bool m_hasCameraFrame{false};
+    // D-25 (v38): the camera worker decodes through IBarcodeDecoder
+    // and confirms scans through ScanService (3-of-last-5), instead of
+    // its own 3-consecutive counting. Both live only in the worker
+    // thread (ScanService::reset() is called there on a generation
+    // change); the UI thread only bumps m_scanGeneration.
+    // m_itfDecoder is declared first: m_scanService is built on it.
+    ItfBarcodeDecoder m_itfDecoder;
+    ScanService m_scanService;
 
     sf::Texture m_generatedBarcodeTexture;
     bool m_hasGeneratedBarcode{false};
@@ -213,6 +240,11 @@ private:
     std::string m_invMessage;
     int m_invSelectedIdx{-1};
     int m_invScroll{0};
+    // v37 (D-33): total sold per product id, summed from
+    // orderDetail.txt - the Inventory "Opening (implied)" column is
+    // remaining + this. Refreshed with the catalogue in
+    // refreshInventory(), so Set Stock keeps it in step.
+    std::map<int, int> m_invSold;
 
     // Manager - Product edit screen
     ui::PinkTextBox m_peIdInput, m_peNameInput, m_peAcronymInput,
@@ -244,6 +276,10 @@ private:
 
     // Cashier/Manager - Order Edit screen (edit a paid order within 7 days)
     ui::PinkTextBox m_oeOrderIdInput, m_oeCustomerInput, m_oeContactInput;
+    // D-18 (v38): barcode box + Add button for appending a line to
+    // the loaded order (bumps qty when the product is already there).
+    ui::PinkTextBox m_oeBarcodeInput;
+    ui::PinkButton m_oeAddBtn;
     ui::PinkButton m_oeLoadBtn, m_oeApproveBtn, m_oeSaveBtn, m_oeBackBtn;
     std::string m_oeMessage;
     bool m_oeManagerApproved{false};
@@ -307,6 +343,7 @@ private:
     void orderEditLoad();
     void orderEditApprove();
     void orderEditSave();
+    void orderEditAddLine();
 
     // ---- Draw methods (existing) ----
     void drawSidebar();
@@ -348,6 +385,13 @@ private:
 
     void startCamera();
     void stopCamera();
+    // D-16 (v38): switch to enumerated device `index` (restarting the
+    // camera only if it is running; otherwise just remembered for the
+    // next start). The service falls back to the next device on failure.
+    void selectCameraDevice(int index);
+    // D-16 (v38): re-enumerate the devices and refresh the picker,
+    // keeping the current selection when that device still exists.
+    void refreshCameraDevices();
     void cameraWorkerLoop();
     void updateCameraTexture(const Image& frame);
     void onBarcodeScanned(const std::string& code);

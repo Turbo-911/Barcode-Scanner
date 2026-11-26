@@ -6,8 +6,8 @@ A desktop application written in C++ for a small store: it converts a six-digit 
 ### Phase 1 — Barcode core
 
 - **Number to barcode:** enter a six-digit number and get a barcode image, previewed in the console and saved as a BMP file.
-- **Barcode to number:** decode a barcode from a BMP image file.
-- **Camera scanning:** capture frames from a webcam and decode the first barcode found.
+- **Barcode to number:** decode a barcode from a BMP, PNG or JPG image file.
+- **Camera scanning:** capture frames from a webcam (pick the camera from the Camera screen's device dropdown) and decode the first barcode found.
 - **Self-test:** an encode-then-decode round trip that checks the whole pipeline without needing files or a camera.
 
 ### Phase 2 — Point of Sale
@@ -15,16 +15,17 @@ A desktop application written in C++ for a small store: it converts a six-digit 
 - **Product catalogue:** products with price, tax, discount and live stock, stored in `Data/product.txt`.
 - **Product description:** scan a product's barcode (camera or file) or type it to see its full specification; an unknown barcode gives a clear "no product found" message.
 - **Scan-to-order:** scanning a product with the POS camera adds it to the current order automatically — scanning it again adds one more.
-- **Stock rule:** a product is added only when the required quantity is within the available stock.
+- **Stock rule:** a product is added only when the required quantity is strictly less than the available stock — buying the last unit is not allowed.
 - **Checkout and billing:** the bill is calculated, shown on screen, written to the data files, and stock is reduced.
 
 ### Phase 3 — PoS v2
 
 - **Product categories:** the manager configures categories in `Data/PCategory.txt`; every product carries a Category Id, and the first two digits of its barcode are the category.
-- **Order editing:** orders can be held and resumed with minimum clicks; a paid order can be edited within 7 days of payment, only after manager approval.
+- **Order editing:** orders can be held and resumed with minimum clicks — holding with no customer name stores it as Walk-in (checkout still needs a name); a paid order can be edited within 7 days of payment, only after manager approval, and a line can be added by barcode on the Order Edit screen.
 - **Inventory:** the manager can view and update stock at any time, and add or edit any product.
+- **Approval log:** every manager approval of a paid-order edit is written to `Data/audit.txt` (one line per approval: order id, date, time), created on first approval.
 - **Split bill format:** `Data/bill.txt` holds one line per bill (totals, amount received, balance returned, seasonal and special discounts); the per-product lines live in `Data/BillDetail.txt`.
-- **Discounts:** seasonal discounts from manager-configured seasons in `Data/Seasons.txt` apply automatically at billing; a special discount of up to 8% can be given at checkout.
+- **Discounts:** seasonal discounts from manager-configured seasons in `Data/Seasons.txt` apply automatically at billing; a special discount of up to 8% can be given at checkout. Seasonal and special discounts together are capped at 50% of the pre-discount payable (the special discount is trimmed first).
   - Worked example (milk + bread basket): Fresh Milk x2 (180.00 each) + Branded Bread x1 (120.00) is 480.00 without tax, tax 25.00, product discount 10.00 — **495.00 before any season**. The seasonal discount is 10% of (without tax + tax − product discount), so inside the active 10% season it takes 49.50 off and the same basket is **445.50**. Do not quote 495.00 for a bill raised inside a season.
 - **PDF bills:** a bill can be printed as a PDF by the cashier or the manager.
 - **Roles:** cashier and manager features are provided separately through the UI.
@@ -70,12 +71,12 @@ The full barcode layout is:
 ### Barcode to number
 
 1. Load the image and convert it to grayscale.
-2. Convert it to pure black and white with a brightness threshold.
-3. Take a horizontal scan line through the image, trying several rows for reliability.
-4. Measure the lengths of consecutive black and white runs.
-5. Use the four start-pattern runs to find the width of one narrow bar.
-6. Classify every run as narrow or wide (wide if its width is at least twice the narrow width).
-7. Remove the start and stop patterns and check that 30 elements remain.
+2. Convert it to pure black and white with a brightness threshold, trying four thresholds derived from the line's own brightness (midpoint, mean, low, high); if no polarity works, the inverted image (white bars on black) is tried the same way.
+3. Take scan lines through the image: horizontal lines at several heights (also right-to-left), then vertical lines, then slightly diagonal lines (up to about 16 degrees of tilt).
+4. Measure the lengths of consecutive black and white runs along a line.
+5. Look for 37 consecutive alternating runs starting with a black bar: 4 start-pattern runs, 30 digit elements, 3 stop-pattern runs. Use the four start-pattern runs to find the width of one narrow bar (their average).
+6. A 37-run window is only a barcode if it is flanked by a quiet zone of at least 10 narrow widths of white on both sides, so a slice of a longer ITF code (for example ITF-14) is never misread as a 6-digit code.
+7. Classify each digit's five elements as narrow or wide by sorting the five widths and taking the threshold halfway between the 3rd and 4th smallest; widths above the threshold are wide. Exactly two of the five must be wide, and the resulting pattern must match one of the ten digit patterns.
 8. Split the elements back into bar digits and space digits, and look each pattern up in the table.
 9. If decoding fails, reverse the runs and try again to handle upside-down images.
 
@@ -99,14 +100,17 @@ Barcode-Scanner/
 │   ├── main.cpp          Entry point: GUI by default, --console / --selftest / --screenshot
 │   ├── App.h / App.cpp   Phase 1 console menu
 │   ├── barcode/          ITF encoder/decoder, shared patterns, encoder/decoder interfaces
-│   ├── camera/           Webcam capture (Media Foundation) + frame-source interface
+│   ├── camera/           Webcam capture (Media Foundation) + device choice + frame-source interface
 │   ├── common/           common.h (shared types), BMP codec, image helpers, image_io,
+│   │                     stb_image.h (vendored PNG/JPG loader),
 │   │                     string_utils (file text rules), date_time (the only clock reader)
 │   ├── domain/           Pure data: product.h, order.h (Order + OrderDetail), bill.h
-│   │                     (Bill + BillDetail), enums (statuses / payment modes / roles)
+│   │                     (Bill + BillDetail), enums (statuses / payment modes / roles),
+│   │                     payment_rules (merchant lists by payment mode)
 │   ├── persistence/      record_file (only raw file IO), one serialiser per data file,
 │   │                     repository interfaces + file repositories (products, orders,
-│   │                     bills, bill details, categories, seasons)
+│   │                     bills, bill details, categories, seasons),
+│   │                     journal_repo + audit_log (write-ahead journal, approval log)
 │   ├── services/         id_generator, bill_calculator (money maths), bill_service,
 │   │                     product_service (incl. THE stock rule), order_service,
 │   │                     category_service, seasons_service, report_service,
@@ -129,8 +133,8 @@ On top of the Phase 1 barcode core, the GUI is a small store POS:
   another, merged into the same line), and a decoded barcode on the
   Camera or File scanner screens can also be sent straight into the
   current order. Quantities can be set by hand as well — a product is
-  added only when the required quantity is within the available stock
-  (the stock rule lives in `ProductService::canSell`).
+  added only when the required quantity is strictly less than the
+  available stock (the stock rule lives in `ProductService::canSell`).
 - **Customer and payment:** the customer's name and contact number
   (exactly 11 digits) are recorded with the order, and the payment
   mode, order status and merchant are picked from drop-down menus —
@@ -151,17 +155,20 @@ On top of the Phase 1 barcode core, the GUI is a small store POS:
   barcode is generated with the category as the first two digits.
 - **Hold and resume:** an order can be held from the POS screen with
   one button and resumed later from the Held Orders screen; stock
-  moves only when the order is finally billed.
+  moves only when the order is finally billed. Holding with no
+  customer name stores the order as Walk-in; checkout still needs
+  a name.
 - **Editing a paid order:** on the Order Edit screen the manager
-  approves, the cashier adjusts the customer details and line
-  quantities, and saving rewrites the order and re-issues its bill
+  approves (the approval is written to `Data/audit.txt`), the
+  cashier adjusts the customer details and line quantities, can add
+  a line by barcode, and saving rewrites the order and re-issues its bill
   in place (same Bill Id), reconciling stock. Only paid orders, only
   within 7 days of payment.
 - **Seasons and discounts:** the manager defines seasons (date range
   + discount %) and activates or deactivates them; at checkout an
   active season's discount is applied automatically, and a special
   discount of up to 8% can be added on top. Both amounts are recorded
-  on the bill.
+  on the bill. Together they are capped at 50% of the pre-discount payable.
 - **Amount received / balance:** checkout records what the customer
   handed over and the balance returned.
 - **Reports:** the Reports screen runs the six manager reports in
@@ -193,14 +200,14 @@ The console program (`--console`) shows a menu:
 
 ```text
  1. Generate barcode from 6-digit number
- 2. Read barcode from image file (.bmp)
+ 2. Read barcode from image file (.bmp/.png/.jpg)
  3. Scan barcode with camera
  4. Run self-test (encode -> decode)
  0. Exit
 ```
 
 - **Option 1:** enter six digits. The barcode is previewed in the console and saved as `barcode_<number>.bmp`, or a file name of your choice.
-- **Option 2:** enter the path to a BMP image. Paths wrapped in quotes (as when dragging a file into the console) are accepted.
+- **Option 2:** enter the path to an image file (BMP, PNG or JPG). Paths wrapped in quotes (as when dragging a file into the console) are accepted.
 - **Option 3:** hold a barcode in front of the camera. The program tries up to 30 frames. If none decode, the last frame is saved as `last_capture.bmp` for debugging.
 - **Option 4:** runs a set of sample numbers through encode and decode and prints PASS or FAIL for each.
 
@@ -230,7 +237,7 @@ The console program (`--console`) shows a menu:
 ## Known Limitations
 
 - Only six-digit numbers starting with a non-zero digit are supported.
-- Image files must be BMP.
+- Image files must be BMP, PNG or JPG/JPEG.
 - Heavily blurred, rotated, or low-contrast images may not decode.
 - Camera support depends on the Windows camera APIs available on the machine.
 - Order and Bill Ids are time-based (HHMMSS + day), but checkout

@@ -33,6 +33,35 @@ double BillCalculator::lineTotal(const CartLine& line)
 double BillCalculator::payableAfterDiscounts(const Totals& totals,
     double seasonalDiscount, double specialDiscount)
 {
-    const double payable = totals.payable - round2(seasonalDiscount) - round2(specialDiscount);
+    double seasonal = 0.0;
+    double special = 0.0;
+    cappedDiscounts(totals, seasonalDiscount, specialDiscount, seasonal, special);
+    const double payable = totals.payable - seasonal - special;
     return std::max(0.0, round2(payable));
+}
+
+// v38 (D-10/D-22): cap the COMBINED seasonal + special discount at 50%
+// of the pre-discount payable. The cap trims the special discount
+// first (it is discretionary), then the seasonal, so the two effective
+// amounts always sum to the discount actually taken.
+void BillCalculator::cappedDiscounts(const Totals& totals,
+    double seasonalDiscount, double specialDiscount,
+    double& seasonalOut, double& specialOut)
+{
+    double seasonal = round2(seasonalDiscount);
+    double special = round2(specialDiscount);
+    if (seasonal < 0.0) seasonal = 0.0;
+    if (special < 0.0) special = 0.0;
+    const double cap = round2(totals.payable * 0.5);
+    const double combined = round2(seasonal + special);
+    if (combined > cap)
+    {
+        double excess = round2(combined - cap);
+        const double trimSpecial = special < excess ? special : excess;
+        special = round2(special - trimSpecial);
+        excess = round2(excess - trimSpecial);
+        seasonal = round2(seasonal - excess);
+    }
+    seasonalOut = seasonal;
+    specialOut = special;
 }

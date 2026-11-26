@@ -9,7 +9,10 @@
 // load + validity checks at every call site.
 namespace imageio
 {
-    // Load a BMP file and confirm it holds a usable image.
+    // Load an image file and confirm it holds a usable image.
+    // BMP goes through the project BMP codec; PNG/JPG/JPEG go
+    // through stb_image, always converted to 8-bit greyscale
+    // for the decoder (D-31, v38). Extension match is case-insensitive.
     bool loadImage(const std::string& path, Image& out);
     // Save an image as a BMP file (false for an empty/invalid image).
     bool saveImage(const Image& img, const std::string& path);

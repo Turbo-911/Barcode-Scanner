@@ -20,6 +20,7 @@ add_executable(barcode_studio_gui
         src/common/string_utils.cpp
         src/common/date_time.cpp
         src/domain/enums.cpp
+        src/domain/payment_rules.cpp
         src/persistence/record_file.cpp
         src/persistence/product_serialiser.cpp
         src/persistence/order_serialiser.cpp
@@ -28,6 +29,9 @@ add_executable(barcode_studio_gui
         src/persistence/bill_detail_serialiser.cpp
         src/persistence/category_serialiser.cpp
         src/persistence/seasons_serialiser.cpp
+        src/persistence/journal_serialiser.cpp
+        src/persistence/journal_repo.cpp
+        src/persistence/audit_log.cpp
         src/persistence/i_product_repo.cpp
         src/persistence/i_order_repo.cpp
         src/persistence/i_bill_repo.cpp

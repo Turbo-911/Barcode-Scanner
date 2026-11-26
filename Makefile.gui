@@ -17,9 +17,11 @@ SRCS := src/main.cpp src/App.cpp \
     src/common/BMP.cpp src/common/image.cpp src/common/image_io.cpp \
     src/common/string_utils.cpp src/common/date_time.cpp \
     src/domain/enums.cpp \
+    src/domain/payment_rules.cpp \
     src/persistence/record_file.cpp src/persistence/product_serialiser.cpp src/persistence/order_serialiser.cpp \
     src/persistence/order_detail_serialiser.cpp src/persistence/bill_serialiser.cpp \
     src/persistence/bill_detail_serialiser.cpp src/persistence/category_serialiser.cpp src/persistence/seasons_serialiser.cpp \
+    src/persistence/journal_serialiser.cpp src/persistence/journal_repo.cpp src/persistence/audit_log.cpp \
     src/persistence/i_product_repo.cpp src/persistence/i_order_repo.cpp src/persistence/i_bill_repo.cpp \
     src/persistence/i_bill_detail_repo.cpp src/persistence/i_category_repo.cpp src/persistence/i_seasons_repo.cpp \
     src/services/id_generator.cpp src/services/bill_calculator.cpp src/services/bill_service.cpp \

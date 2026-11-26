@@ -69,11 +69,30 @@ namespace
     }
 
     // Attempts to decode 37 consecutive alternating runs [B, W, B, W, ...]
-    bool tryDecode37Runs(const int runs[37], std::string& outDigits)
+    // D-19 (v38): a window is only a barcode if it is flanked by a quiet
+    // zone of >= 10 narrow widths of white on BOTH sides (the encoder
+    // renders exactly 10 modules each side). Without this, any 37-run
+    // slice of a longer ITF code decodes as a 6-digit code (e.g. ITF-14
+    // 30784853194130 misread as 194130): inside a longer code the runs
+    // next to the slice are bars/spaces of at most 3 narrow widths, so
+    // no interior slice can satisfy the rule. quietBeforePx /
+    // quietAfterPx are the white-margin spans (px) immediately before /
+    // after the window, as measured by the caller: white runs plus any
+    // isolated sub-element black specks, up to the first run that could
+    // be a real bar (see the call site). A missing span (barcode cut
+    // off at the image edge) is 0 and fails the rule.
+    bool tryDecode37Runs(const int runs[37], std::string& outDigits,
+        double quietBeforePx, double quietAfterPx)
     {
         // Start pattern: runs[0..3] (all narrow)
         double narrowEst = (runs[0] + runs[1] + runs[2] + runs[3]) / 4.0;
         if (narrowEst < 0.75)
+        {
+            return false;
+        }
+
+        // Quiet zone: >= 10 narrow widths of white on each side.
+        if (quietBeforePx < 10.0 * narrowEst || quietAfterPx < 10.0 * narrowEst)
         {
             return false;
         }
@@ -264,15 +283,59 @@ namespace
                         reverseRuns[k] = runs[i + 36 - k].length;
                     }
 
+                    // Flanking white margins (D-19, v38): the white span
+                    // on each side of the window, up to the first run
+                    // that could be a real bar. Runs alternate by
+                    // construction, so the run next to the window is
+                    // white when it exists; a missing run means the
+                    // barcode is cut off at the image edge (no quiet
+                    // zone there, span 0). A black run shorter than
+                    // 0.45 narrow widths cannot be a barcode element
+                    // (tryDecode37Runs rejects such ratios) - it is a
+                    // noise speck inside the margin, so the walk steps
+                    // over it instead of ending the margin there.
+                    // Measured: the strict adjacent-run reading breaks
+                    // the shipped tests/test_noisy.bmp, whose only
+                    // decoding scanline has trailing runs white 3,
+                    // black 1 (speck), white 26 - a 30px margin split
+                    // by one 1px speck. With this walk the span is 30
+                    // (10 narrow widths) and the file decodes; an
+                    // interior slice of a longer ITF code still fails
+                    // because its flanking runs are real bars/spaces
+                    // of >= 1 narrow width, which end the walk at once.
+                    const double narrowEstHere =
+                        (runs[i].length + runs[i + 1].length
+                            + runs[i + 2].length + runs[i + 3].length) / 4.0;
+                    double quietBefore = 0.0;
+                    for (size_t j = i; j-- > 0;)
+                    {
+                        if (runs[j].isBlack
+                            && runs[j].length >= 0.45 * narrowEstHere)
+                        {
+                            break;
+                        }
+                        quietBefore += runs[j].length;
+                    }
+                    double quietAfter = 0.0;
+                    for (size_t j = i + 37; j < runs.size(); ++j)
+                    {
+                        if (runs[j].isBlack
+                            && runs[j].length >= 0.45 * narrowEstHere)
+                        {
+                            break;
+                        }
+                        quietAfter += runs[j].length;
+                    }
+
                     // Forward scan
-                    if (tryDecode37Runs(forwardRuns, outDigits))
+                    if (tryDecode37Runs(forwardRuns, outDigits, quietBefore, quietAfter))
                     {
                         return true;
                     }
 
                     // Reversed scan (for upside-down 180-deg barcodes)
                     std::string revDigits;
-                    if (tryDecode37Runs(reverseRuns, revDigits))
+                    if (tryDecode37Runs(reverseRuns, revDigits, quietAfter, quietBefore))
                     {
                         outDigits = revDigits;
                         return true;
@@ -300,7 +363,7 @@ namespace
 
 } // namespace
 
-bool decodeBarcode(const Image& img, string& digitsOut)
+bool decodeBarcode(const Image& img, std::string& digitsOut)
 {
     digitsOut.clear();
 

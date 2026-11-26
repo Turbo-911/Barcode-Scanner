@@ -3,9 +3,9 @@
 #include "common/common.h"
 #include "barcode/i_barcode_encoder.h"
 
-bool isValidCode(const string& digits);
-vector<int> encodeToWidths(const string& digits);
-Image renderBarcode(const string& digits, int module, int height);  // defaults live in common.h
+bool isValidCode(const std::string& digits);
+std::vector<int> encodeToWidths(const std::string& digits);
+Image renderBarcode(const std::string& digits, int module, int height);  // defaults live in common.h
 
 // ItfBarcodeEncoder - the IBarcodeEncoder implementation for
 // Interleaved 2 of 5. It simply forwards to the free functions above,

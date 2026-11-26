@@ -87,7 +87,7 @@ if not errorlevel 1 (
     for %%D in (src src\barcode src\camera src\common src\domain src\persistence src\services src\ui) do (
         if not exist "build_obj\%%D" mkdir "build_obj\%%D"
     )
-    echo Building Chili Mili Barcode POS Studio
+    echo Building Chili Mili Barcode POS Studio - only changed files...
     mingw32-make -j%NUMBER_OF_PROCESSORS% -f Makefile.gui
     if errorlevel 1 (
         echo.
@@ -104,9 +104,11 @@ if not errorlevel 1 (
         src\common\BMP.cpp src\common\image.cpp src\common\image_io.cpp ^
         src\common\string_utils.cpp src\common\date_time.cpp ^
         src\domain\enums.cpp ^
+        src\domain\payment_rules.cpp ^
         src\persistence\record_file.cpp src\persistence\product_serialiser.cpp src\persistence\order_serialiser.cpp ^
         src\persistence\order_detail_serialiser.cpp src\persistence\bill_serialiser.cpp ^
         src\persistence\bill_detail_serialiser.cpp src\persistence\category_serialiser.cpp src\persistence\seasons_serialiser.cpp ^
+        src\persistence\journal_serialiser.cpp src\persistence\journal_repo.cpp src\persistence\audit_log.cpp ^
         src\persistence\i_product_repo.cpp src\persistence\i_order_repo.cpp src\persistence\i_bill_repo.cpp ^
         src\persistence\i_bill_detail_repo.cpp src\persistence\i_category_repo.cpp src\persistence\i_seasons_repo.cpp ^
         src\services\id_generator.cpp src\services\bill_calculator.cpp src\services\bill_service.cpp ^
@@ -129,6 +131,20 @@ if not exist "barcode_studio_gui.exe" (
     echo [ERROR] Build reported success but barcode_studio_gui.exe is missing.
     pause
     exit /b 1
+)
+
+rem D-38 (v38): copy the MinGW/SFML DLLs next to the exe so double-clicking
+rem the exe works outside this script. The DLLs live beside g++ in the
+rem MSYS2 bin folder. A missing DLL only warns - it never fails the build.
+set "MSYSBIN="
+if not "%GPP%"=="g++.exe" (
+    for %%F in ("%GPP%") do set "MSYSBIN=%%~dpF"
+) else (
+    for /f "delims=" %%F in ('where g++.exe') do if not defined MSYSBIN set "MSYSBIN=%%~dpF"
+)
+for %%D in (libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll sfml-graphics-3.dll sfml-window-3.dll sfml-system-3.dll) do (
+    if exist "%MSYSBIN%%%D" copy /y "%MSYSBIN%%%D" "%~dp0" >nul
+    if not exist "%MSYSBIN%%%D" echo [WARN] %%D was not found next to g++ - the exe may need MSYS2 on PATH to start.
 )
 
 echo [OK] Build succeeded. Starting the GUI...

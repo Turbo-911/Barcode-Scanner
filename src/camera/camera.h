@@ -2,6 +2,7 @@
 
 #include "common/common.h"
 #include "camera/i_frame_source.h"
+#include <string>
 #include <vector>
 
 struct IMFSourceReader;
@@ -13,12 +14,25 @@ public:
     ~Camera();
 
     bool initialize();
+    // v38: open a specific device by index (0 = first). The
+    // no-arg initialize() keeps working and opens device 0.
+    // If the camera is already initialised, either form returns
+    // true WITHOUT switching devices - call cleanup() first to
+    // move to another device. A bad index fails (false) instead
+    // of silently opening device 0; a busy requested device
+    // falls back to the next enumerated device once (D-12).
+    bool initialize(int deviceIndex);
+    // v38: friendly names of the video capture devices, in index
+    // order (entry [i] is the name of device i). Media Foundation
+    // path: the real MF friendly names. VFW / other fallback:
+    // whatever the backend can enumerate, at minimum "Camera 0".
+    // Empty when enumeration itself fails (MF path only).
+    static std::vector<std::string> enumerateDeviceNames();
     void cleanup();
     bool isInitialized() const;
 
     bool captureFrame(Image& out);
     bool captureFrame(Image* out);
-    Image* captureImage();
     unsigned char* captureRawGrayscale(int& width, int& height);
 
     static bool captureSingleFrame(Image& out);

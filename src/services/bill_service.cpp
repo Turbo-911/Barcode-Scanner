@@ -16,8 +16,16 @@ std::optional<Bill> BillService::buildBill(const Order& order, const Totals& tot
     b.totalWithoutTax = BillCalculator::round2(totals.withoutTax);
     b.totalTax = BillCalculator::round2(totals.tax);
     b.totalDiscount = BillCalculator::round2(totals.discount);
-    b.seasonalDiscount = BillCalculator::round2(seasonalDiscount);
-    b.specialDiscount = BillCalculator::round2(specialDiscount);
+    // v38 (D-10/D-22): store the EFFECTIVE (capped) bill-level
+    // discounts, not the raw ones - when the 50% combined cap bites,
+    // the raw amounts would sum to more than the discount actually
+    // taken and the D-32 sum check below would refuse the bill.
+    double seasonalEff = 0.0;
+    double specialEff = 0.0;
+    BillCalculator::cappedDiscounts(totals, seasonalDiscount,
+        specialDiscount, seasonalEff, specialEff);
+    b.seasonalDiscount = BillCalculator::round2(seasonalEff);
+    b.specialDiscount = BillCalculator::round2(specialEff);
     // THE one payable formula (requirement 8, D-31/D-32): what the
     // customer owes after product discounts and the two bill-level
     // discounts, rounded to whole paisa, never below zero.

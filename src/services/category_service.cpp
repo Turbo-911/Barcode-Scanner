@@ -10,6 +10,17 @@ namespace
         for (const char c : s) if (c < '0' || c > '9') return false;
         return true;
     }
+
+    // v38 (D-06): a category acronym is [A-Z0-9]{1,8}, same rule as a
+    // product acronym - a space breaks the space-separated category
+    // line and the row silently vanishes on the next load.
+    bool isValidAcronym(const std::string& s)
+    {
+        if (s.empty() || s.size() > 8) return false;
+        for (const char c : s)
+            if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) return false;
+        return true;
+    }
 }
 
 std::string CategoryService::addCategory(const std::string& id,
@@ -17,7 +28,7 @@ std::string CategoryService::addCategory(const std::string& id,
 {
     if (!isTwoDigits(id) || id == "00") return "bad-id";  // D-20: "00" is not a category
     if (name.empty()) return "bad-name";
-    if (acronym.empty()) return "bad-acronym";
+    if (!isValidAcronym(acronym)) return "bad-acronym";
 
     std::vector<Category> all = m_repo.loadAll();
     for (const Category& c : all)
@@ -36,7 +47,7 @@ std::string CategoryService::updateCategory(const std::string& id,
 {
     if (!isTwoDigits(id)) return "bad-id";
     if (name.empty()) return "bad-name";
-    if (acronym.empty()) return "bad-acronym";
+    if (!isValidAcronym(acronym)) return "bad-acronym";
 
     std::vector<Category> all = m_repo.loadAll();
     for (Category& c : all)

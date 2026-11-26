@@ -5,6 +5,17 @@
 #include "camera/camera.h"
 #include "services/scan_service.h"
 
+#include "persistence/i_bill_detail_repo.h"
+#include "persistence/i_bill_repo.h"
+#include "persistence/i_category_repo.h"
+#include "persistence/i_order_repo.h"
+#include "persistence/i_product_repo.h"
+#include "persistence/i_seasons_repo.h"
+#include "services/category_service.h"
+#include "services/order_service.h"
+#include "services/product_service.h"
+#include "services/seasons_service.h"
+
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -93,7 +104,7 @@ void App::showMenu() const {
               << "   BARCODE SCANNER / READER\n"
               << "==============================\n"
               << " 1. Generate barcode from 6-digit number\n"
-              << " 2. Read barcode from image file (.bmp)\n"
+              << " 2. Read barcode from image file (.bmp/.png/.jpg)\n"
               << " 3. Scan barcode with camera\n"
               << " 4. Run self-test (encode -> decode)\n"
               << " 0. Exit\n"
@@ -132,7 +143,7 @@ void App::generateBarcode() {
 
 void App::readFromFile() {
     std::string path;
-    if (!ask("Path to barcode image (.bmp), or 'b' to go back: ", path)) return;
+    if (!ask("Path to barcode image (.bmp/.png/.jpg), or 'b' to go back: ", path)) return;
     path = stripQuotes(path);
     if (path.empty() || path == "b" || path == "B") return;
     path = resolveImagePath(path);
@@ -140,7 +151,7 @@ void App::readFromFile() {
     Image img;
     if (!imageio::loadImage(path, img)) {
         std::cout << "  Error: could not open '" << path
-                  << "'. Check the path and that it is a valid BMP file.\n";
+                  << "'. Check the path and that it is a valid image file (BMP/PNG/JPG).\n";
         return;
     }
     std::cout << "  Loaded image: " << img.width << " x " << img.height << "\n";
@@ -290,6 +301,46 @@ void App::selfTest() {
 }
 
 int App::run() {
+    // v37 (D-02): roll forward any checkout/edit interrupted by a
+    // crash, before the menu opens. Same recovery the GUI runs at
+    // startup; safe to run twice (idempotent).
+    {
+        ProductFileRepository productRepo;
+        OrderFileRepository orderRepo;
+        OrderDetailFileRepository detailRepo;
+        BillFileRepository billRepo;
+        BillDetailFileRepository billDetailRepo;
+        CategoryFileRepository categoryRepo;
+        SeasonsFileRepository seasonsRepo;
+        CategoryService categories(categoryRepo);
+        SeasonsService seasons(seasonsRepo);
+        ProductService products(productRepo, categories);
+        OrderService orders(products, seasons, orderRepo, detailRepo,
+            billRepo, billDetailRepo);
+        const RecoveryReport recovery = orders.recoverJournal();
+        if (recovery.recovered > 0 || recovery.droppedLines > 0
+            || recovery.skipped > 0)
+        {
+            std::cout << "Startup recovery: recovered "
+                      << recovery.recovered << " interrupted checkout(s)";
+            if (!recovery.recoveredOrderIds.empty())
+            {
+                std::cout << " (";
+                for (std::size_t i = 0; i < recovery.recoveredOrderIds.size(); ++i)
+                {
+                    if (i > 0) std::cout << ", ";
+                    std::cout << recovery.recoveredOrderIds[i];
+                }
+                std::cout << ")";
+            }
+            if (recovery.droppedLines > 0)
+                std::cout << "; " << recovery.droppedLines
+                          << " journal line(s) ignored";
+            if (recovery.skipped > 0)
+                std::cout << "; " << recovery.skipped << " still pending";
+            std::cout << ".\n";
+        }
+    }
     std::string choice;
     while (true) {
         showMenu();

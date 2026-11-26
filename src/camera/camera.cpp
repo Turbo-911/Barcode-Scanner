@@ -24,6 +24,7 @@
 #include <cstring>
 #include <iomanip>
 #include <new>
+#include <string>
 
 #include "camera/camera.h"
 
@@ -81,6 +82,32 @@ void logDeviceName(IMFActivate* device, UINT32 index)
         logHresult("IMFActivate::GetAllocatedString(FRIENDLY_NAME)", hr);
     }
 }
+
+// v38: the friendly name of one enumerated device, as a narrow
+// string ("Camera <index>" when the device has no readable name).
+std::string deviceFriendlyName(IMFActivate* device, UINT32 index)
+{
+    WCHAR* name = NULL;
+    UINT32 nameLength = 0;
+    HRESULT hr = device->GetAllocatedString(
+        MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &name, &nameLength);
+    if (FAILED(hr) || name == NULL)
+    {
+        if (name != NULL) CoTaskMemFree(name);
+        return "Camera " + std::to_string(index);
+    }
+    const int bytes = WideCharToMultiByte(CP_UTF8, 0, name, -1, NULL, 0, NULL, NULL);
+    std::string out;
+    if (bytes > 1)
+    {
+        std::vector<char> buf((size_t)bytes);
+        WideCharToMultiByte(CP_UTF8, 0, name, -1, buf.data(), bytes, NULL, NULL);
+        out.assign(buf.data());
+    }
+    CoTaskMemFree(name);
+    if (out.empty()) return "Camera " + std::to_string(index);
+    return out;
+}
 }
 
 // D-34: EVERY member is initialised here. The Media Foundation
@@ -109,7 +136,7 @@ Camera::~Camera()
     cleanup();
 }
 
-bool Camera::initialize()
+bool Camera::initialize(int deviceIndex)
 {
     if (m_isInitialized)
     {
@@ -199,12 +226,31 @@ bool Camera::initialize()
         }
     }
 
-    // Activate a capture device. D-12: if device 0 is busy or blocked
-    // by privacy settings, try the next enumerated device once before
-    // giving up, instead of failing on the first device outright.
+    // v38: the requested device must exist - a bad index fails
+    // here instead of silently opening device 0.
+    if (deviceIndex < 0 || (UINT32)deviceIndex >= deviceCount)
+    {
+        std::cerr << "[Camera] Requested device " << deviceIndex
+                  << " is out of range (" << deviceCount << " device(s)).\n";
+        // The activator array is still owned here (the release
+        // loop below has not run yet): free it before cleanup().
+        for (UINT32 i = 0; i < deviceCount; ++i)
+            if (ppDevices[i] != NULL) ppDevices[i]->Release();
+        CoTaskMemFree(ppDevices);
+        ppDevices = NULL;
+        cleanup();
+        return false;
+    }
+
+    // Activate the requested capture device. D-12: if it is busy or
+    // blocked by privacy settings, try the next enumerated device
+    // once before giving up, instead of failing on the first device
+    // outright. (v38: the loop starts at the requested index - the
+    // old code always started at device 0.)
     IMFMediaSource* pMediaSource = NULL;
     hr = E_FAIL;
-    for (UINT32 dev = 0; dev < deviceCount && dev < 2 && pMediaSource == NULL; ++dev)
+    for (UINT32 dev = (UINT32)deviceIndex;
+         dev < deviceCount && dev < (UINT32)deviceIndex + 2 && pMediaSource == NULL; ++dev)
     {
         if (ppDevices[dev] == NULL)
         {
@@ -444,6 +490,84 @@ bool Camera::initialize()
     std::cerr << "[Camera] Camera initialized: " << m_width << "x"
               << m_height << ", stride " << m_stride << ".\n";
     return true;
+}
+
+// v38: the no-arg form keeps opening device 0, exactly as before.
+bool Camera::initialize()
+{
+    return initialize(0);
+}
+
+// v38: friendly names of the video capture devices, via the same MF
+// enumeration initialize() uses. Self-contained: it starts COM and
+// Media Foundation itself and shuts them down again, so it is safe
+// to call before (or without) initialize(). An empty list means
+// enumeration itself failed (no devices, or MF would not start).
+std::vector<std::string> Camera::enumerateDeviceNames()
+{
+    std::vector<std::string> names;
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    bool comOurs = false;
+    if (hr == S_OK || hr == S_FALSE)
+    {
+        comOurs = true;
+    }
+    else if (hr == RPC_E_CHANGED_MODE)
+    {
+        // COM is already running in another apartment: use it, but
+        // do not uninitialise it (same rule as initialize()).
+        comOurs = false;
+    }
+    else
+    {
+        logHresult("CoInitializeEx", hr);
+        return names;
+    }
+    hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
+    if (FAILED(hr))
+    {
+        logHresult("MFStartup", hr);
+        if (comOurs) CoUninitialize();
+        return names;
+    }
+    IMFAttributes* pAttributes = NULL;
+    hr = MFCreateAttributes(&pAttributes, 1);
+    if (SUCCEEDED(hr) && pAttributes != NULL)
+    {
+        hr = pAttributes->SetGUID(
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
+        IMFActivate** ppDevices = NULL;
+        UINT32 deviceCount = 0;
+        if (SUCCEEDED(hr))
+            hr = MFEnumDeviceSources(pAttributes, &ppDevices, &deviceCount);
+        pAttributes->Release();
+        if (SUCCEEDED(hr) && ppDevices != NULL)
+        {
+            for (UINT32 i = 0; i < deviceCount; ++i)
+            {
+                if (ppDevices[i] == NULL)
+                {
+                    names.push_back("Camera " + std::to_string(i));
+                    continue;
+                }
+                names.push_back(deviceFriendlyName(ppDevices[i], i));
+                ppDevices[i]->Release();
+            }
+            CoTaskMemFree(ppDevices);
+        }
+        else if (FAILED(hr))
+        {
+            logHresult("MFEnumDeviceSources", hr);
+        }
+    }
+    else
+    {
+        logHresult("MFCreateAttributes(device enumeration)", hr);
+    }
+    MFShutdown();
+    if (comOurs) CoUninitialize();
+    return names;
 }
 
 void Camera::cleanup()
@@ -696,30 +820,6 @@ bool Camera::captureFrame(Image* out)
     return captureFrame(*out);
 }
 
-Image* Camera::captureImage()
-{
-    int w = 0;
-    int h = 0;
-    unsigned char* rawPixels = readFrameRaw(w, h);
-    if (rawPixels == nullptr)
-    {
-        return nullptr;
-    }
-
-    int totalPixels = w * h;
-    Image* pImg = new Image();
-    pImg->width = w;
-    pImg->height = h;
-    pImg->pixels.resize((size_t)totalPixels);
-    std::memcpy(pImg->pixels.data(), rawPixels, (size_t)totalPixels);
-
-    // Free the manually allocated raw buffer
-    delete[] rawPixels;
-    rawPixels = nullptr;
-
-    return pImg;
-}
-
 unsigned char* Camera::captureRawGrayscale(int& width, int& height)
 {
     return readFrameRaw(width, height);
@@ -806,8 +906,9 @@ Camera::~Camera()
     cleanup();
 }
 
-bool Camera::initialize()
+bool Camera::initialize(int deviceIndex)
 {
+    if (deviceIndex < 0) return false;
 #if defined(_WIN32)
     HWND window = capCreateCaptureWindowA(
         "BarcodeScannerCamera", WS_CHILD, 0, 0, 1, 1,
@@ -820,8 +921,10 @@ bool Camera::initialize()
 
     m_captureWindow = window;
     capSetUserData(window, reinterpret_cast<LPARAM>(this));
-    // D-12: if device 0 cannot connect, try the next device once.
-    if (!capDriverConnect(window, 0) && !capDriverConnect(window, 1))
+    // D-12: if the requested device cannot connect, try the next
+    // device once. (v38: the old code always tried device 0, then 1.)
+    if (!capDriverConnect(window, deviceIndex)
+        && !capDriverConnect(window, deviceIndex + 1))
     {
         std::cerr << "[Camera] capDriverConnect failed: no compatible webcam driver.\n";
         cleanup();
@@ -860,6 +963,38 @@ bool Camera::initialize()
                  "compiler could not find the Windows Media Foundation headers "
                  "(mfapi.h, mfidl.h, mfreadwrite.h, mferror.h).\n";
     return false;
+#endif
+}
+
+// v38: the no-arg form keeps opening device 0, exactly as before.
+bool Camera::initialize()
+{
+    return initialize(0);
+}
+
+// v38: friendly device names. With Media Foundation unavailable the
+// Video-for-Windows driver list is used on Windows (capGetDriver-
+// DescriptionA, indices 0-9); anywhere else there is nothing to
+// enumerate, so the single fallback name the existing code can
+// address (device 0) is returned.
+std::vector<std::string> Camera::enumerateDeviceNames()
+{
+#if defined(_WIN32)
+    std::vector<std::string> names;
+    for (int i = 0; i < 10; ++i)
+    {
+        char name[128] = {};
+        char version[128] = {};
+        if (!capGetDriverDescriptionA((WORD)i, name, sizeof(name),
+            version, sizeof(version)))
+            break;
+        if (name[0] == '\0') break;
+        names.push_back(name);
+    }
+    if (names.empty()) names.push_back("Camera 0");
+    return names;
+#else
+    return std::vector<std::string>{"Camera 0"};
 #endif
 }
 
@@ -970,11 +1105,6 @@ bool Camera::captureFrame(Image* out)
 {
     (void)out;
     return false;
-}
-
-Image* Camera::captureImage()
-{
-    return NULL;
 }
 
 unsigned char* Camera::captureRawGrayscale(int& width, int& height)

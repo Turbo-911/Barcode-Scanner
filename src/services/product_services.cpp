@@ -5,10 +5,21 @@ namespace
 // D-21: the service-layer field rules - acronym 1-8 chars, unit in
 // {count, weight}, price > 0, tax >= 0, discount >= 0 and <= price,
 // quantity >= 0. Returns "" when the product is valid, else "bad-fields".
+// v38 (D-06): the acronym is [A-Z0-9]{1,8} - a space (or lowercase, or
+// punctuation) breaks the space-separated product line and the product
+// silently vanishes on the next load, so it is refused here.
+bool isValidAcronym(const std::string& s)
+{
+    if (s.empty() || s.size() > 8) return false;
+    for (const char c : s)
+        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) return false;
+    return true;
+}
+
 std::string validateProductFields(const Product& p)
 {
     if (p.name.empty()) return "bad-fields";
-    if (p.acronym.size() < 1 || p.acronym.size() > 8) return "bad-fields";
+    if (!isValidAcronym(p.acronym)) return "bad-fields";
     if (p.unit != "count" && p.unit != "weight") return "bad-fields";
     if (!(p.unitPrice > 0.0)) return "bad-fields";
     if (!(p.taxPerUnit >= 0.0)) return "bad-fields";

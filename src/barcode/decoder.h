@@ -5,7 +5,7 @@
 
 // Decodes a 6-digit Interleaved 2 of 5 (ITF) barcode from a grayscale image.
 // Returns true and writes to digitsOut on success; returns false if no barcode is found.
-bool decodeBarcode(const Image& img, string& digitsOut);
+bool decodeBarcode(const Image& img, std::string& digitsOut);
 
 // ItfBarcodeDecoder - the IBarcodeDecoder implementation for
 // Interleaved 2 of 5. It simply forwards to decodeBarcode() above,

@@ -32,4 +32,13 @@ public:
     // bill-level rupee discounts, rounded, never below zero.
     static double payableAfterDiscounts(const Totals& totals,
         double seasonalDiscount, double specialDiscount);
+    // v38 (D-10/D-22): the COMBINED seasonal + special discount is
+    // capped at 50% of the pre-discount payable, so a 99% season plus
+    // an 8% special can never zero a bill. The cap trims the special
+    // discount first, then the seasonal, so the two effective amounts
+    // always sum to the discount actually taken (D-32: the stored bill
+    // fields must sum to the stored payable). Outputs are rounded.
+    static void cappedDiscounts(const Totals& totals,
+        double seasonalDiscount, double specialDiscount,
+        double& seasonalOut, double& specialOut);
 };

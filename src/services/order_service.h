@@ -4,6 +4,7 @@
 #include "persistence/i_bill_detail_repo.h"
 #include "persistence/i_bill_repo.h"
 #include "persistence/i_order_repo.h"
+#include "persistence/journal_repo.h"
 #include "services/bill_calculator.h"
 #include "services/product_service.h"
 #include "services/seasons_service.h"
@@ -36,7 +37,19 @@ struct DataHealth
     int orphanBillDetails = 0;   // BillDetail rows whose bill id matches no bill
 };
 
-// OrderService - the POS order workflow (SRP): the cart being built,
+// RecoveryReport - what the last startup recovery (v37, D-02) did.
+// The Self-Test screen shows this next to the orphan counts.
+struct RecoveryReport
+{
+    int recovered = 0;       // pending entries rolled forward to completion
+    int droppedLines = 0;    // malformed journal lines ignored (crash
+                             // during the journal write itself; the
+                             // checkout never started, so nothing to do)
+    int skipped = 0;         // pending entries left pending (a product
+                             // the entry needs no longer exists, or the
+                             // rebuilt bill's money does not add up)
+    std::vector<std::string> recoveredOrderIds;  // in journal order
+};
 // checkout (order + bill + stock), holding and resuming orders, and
 // editing a paid order under the 7-day / manager-approval rule.
 // It owns no file formats: every read and write goes through the
@@ -70,9 +83,13 @@ public:
     // rewritten to full payment, and an underpaid order is NEVER recorded
     // as paid (D-06). Status must be "paid": a bill is never written for
     // an on-hold / in-progress / archived order, and no stock moves for
-    // one. Returns "" on success, else "empty-order", "no-customer",
-    // "bad-discount", "bad-status", "bad-payment", "low-stock",
-    // "underpayment", "already-billed", "id-collision", "bill-error",
+    // one. v37 (D-02): a write-ahead journal entry is appended BEFORE
+    // any data file is touched; a crash after that point is rolled
+    // forward by recoverJournal() at the next startup. Returns "" on
+    // success, else "empty-order", "no-customer", "bad-discount",
+    // "bad-status", "bad-payment", "low-stock", "underpayment",
+    // "already-billed", "id-collision", "bill-error", "journal-failed"
+    // (the journal append itself failed - nothing was written),
     // "stock-failed" or "write-failed".
     std::string checkout(const std::string& customerName,
         const std::string& customerContact, const std::string& status,
@@ -83,8 +100,15 @@ public:
     // Save the cart as an on-hold order (no bill, no stock movement -
     // stock moves when the resumed order is checked out). The payment
     // mode/merchant are validated the same way as checkout (D-06/D-22).
-    // Returns "" on success, else "empty-order", "no-customer",
-    // "bad-payment", "id-collision" or "write-failed".
+    // v38 (D-26a): an empty customer name is stored as "Walk-in".
+    // v38 (D-23): re-holding a RESUMED order updates that order IN
+    // PLACE (same Order Id, its detail rows replaced with the current
+    // cart) and KEEPS m_resumedOrderId set, so a later checkout still
+    // supersedes it in place instead of leaving a ghost on-hold row.
+    // Returns "" on success, else "empty-order", "bad-payment",
+    // "id-collision" or "write-failed". ("no-customer" is gone: an
+    // anonymous hold is a Walk-in hold. Checkout still returns
+    // "no-customer" for an empty name - a bill needs a name.)
     std::string holdOrder(const std::string& customerName,
         const std::string& customerContact, const std::string& paymentMode,
         const std::string& paymentMerchant);
@@ -114,6 +138,22 @@ public:
     // Data consistency counts (D-02) - see DataHealth above.
     DataHealth dataHealth();
 
+    // Startup recovery (v37, D-02): roll forward every `pending`
+    // journal entry - re-create any missing piece (order row, detail
+    // rows, bill + BillDetail rows) and re-apply any stock decrease
+    // that did not happen - then mark the entry `done`. Idempotent:
+    // every step first checks the current records/stock, so running it
+    // twice changes nothing the second time. A malformed journal line
+    // is ignored and counted in the report's droppedLines (the
+    // checkout never started, so there is nothing to recover). Entries
+    // that cannot be completed (a product is gone, or the rebuilt
+    // bill's money does not add up) are left `pending` and counted as
+    // skipped, so the next startup tries again. Call once at startup,
+    // before the GUI opens. Returns what was done; lastRecovery()
+    // keeps the same report for the Self-Test screen.
+    RecoveryReport recoverJournal();
+    RecoveryReport lastRecovery() const { return m_lastRecovery; }
+
     // The gate for editing a paid order (requirement 3): the order
     // must exist, be paid, be within 7 days of its payment date and
     // have a manager's approval. Returns "" and the order when the
@@ -132,9 +172,12 @@ public:
     // reconciles stock (old quantities back, new quantities out) and
     // updates the order's customer fields and payment amount. The
     // original special discount, amount received and bill date are
-    // carried through (D-16) - none is reset. Same return codes as
-    // editPaidOrder, plus "empty-order", "no-customer", "low-stock",
-    // "bill-error", "stock-failed" and "write-failed".
+    // carried through (D-16) - none is reset. v37 (D-02): a journal
+    // entry is appended BEFORE any stock move or file write, and the
+    // stock check is non-mutating (new lines must fit in stock plus
+    // the old quantities). Same return codes as editPaidOrder, plus
+    // "empty-order", "no-customer", "low-stock", "bill-error",
+    // "journal-failed", "stock-failed" and "write-failed".
     std::string saveEditedPaidOrder(const std::string& orderId,
         const std::string& customerName,
         const std::string& customerContact,
@@ -147,12 +190,37 @@ private:
     std::string paymentDateFor(const std::string& orderId,
         const std::string& fallbackDate);
 
+    // v37 (D-02): the journal entry for one checkout/edit attempt,
+    // built from the already-validated attempt (ids, bill, amounts).
+    // `stockBefore` is snapshotted from the live catalogue here, at
+    // journal-write time - before any file is touched and before any
+    // stock moves.
+    JournalSerialiser::Entry buildJournalEntry(const std::string& kind,
+        const Order& order, const std::string& billId,
+        double seasonalAmount, double specialAmount, double amountReceived,
+        const std::vector<CartLine>& lines,
+        const std::vector<OrderDetail>& oldLines);
+    // v37 (D-02): best-effort removal of the rows ONE failed checkout
+    // attempt appended (fresh attempt: the order/details/bill rows go
+    // away; completing a resumed order: the on-hold row and its old
+    // detail rows are restored, the new bill row goes away). Used only
+    // on the write-failed path, before the journal entry is aborted.
+    void rollbackCheckoutWrites(const std::string& orderId,
+        const std::string& billId, bool completing, const Order& storedOrder,
+        const std::vector<OrderDetail>& storedDetails);
+    // v37 (D-02): roll ONE pending entry forward. Returns true when
+    // the entry is complete (and now marked done), false when it must
+    // stay pending.
+    bool recoverOneEntry(const JournalSerialiser::Entry& entry);
+
     ProductService& m_products;
     SeasonsService& m_seasons;
     IOrderRepository& m_orders;
     IOrderDetailRepository& m_details;
     IBillRepository& m_bills;
     IBillDetailRepository& m_billDetails;
+    JournalFileRepository m_journal;  // v37: Data/journal.txt
+    RecoveryReport m_lastRecovery;    // v37: result of recoverJournal()
     std::vector<CartLine> m_lines;
     std::string m_resumedOrderId;
     std::string m_resumeWarning;  // set by resumeOrder(), see resumeWarning()
